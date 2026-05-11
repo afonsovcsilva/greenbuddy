@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  php:
+    image: php:8.2-apache
+    container_name: php_app
+    restart: always
+    ports:
+      - "7878:80"
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - mysql
+    command: >
+      bash -c "docker-php-ext-install mysqli pdo pdo_mysql && apache2-foreground"
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: greenbuddydb
+      MYSQL_USER: green
+      MYSQL_PASSWORD: buddy
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin_ui
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - "8080:80"
+
+volumes:
+  mysql_data:

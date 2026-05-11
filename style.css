@@ -1,0 +1,85 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f4f1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.auth-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 20px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+
+.logo-container img {
+    max-width: 180px;
+    margin-bottom: 1rem;
+}
+
+h2 { color: #2d5a27; margin-bottom: 1.5rem; }
+
+.input-group { margin-bottom: 15px; text-align: left; }
+
+label { display: block; margin-bottom: 5px; color: #666; font-size: 0.9rem; }
+
+input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    box-sizing: border-box;
+}
+
+.btn {
+    background-color: #2d5a27;
+    color: white;
+    border: none;
+    padding: 12px;
+    width: 100%;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    transition: background 0.3s;
+}
+
+.btn:hover { background-color: #3e7a36; }
+
+.toggle-link {
+    margin-top: 15px;
+    display: block;
+    color: #007bff;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+/* Reset básico */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #fdfdfd;
+    color: #333;
+}
+
+/* Garante que a logo na nav não fique gigante */
+.logo-mini img {
+    height: 50px;
+    width: auto;
+}
+
+/* Estilo para o formulário de login (se ainda usares a auth-card) */
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: #f0f4f1;
+}
