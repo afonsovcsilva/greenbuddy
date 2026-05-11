@@ -6,137 +6,120 @@
     <title>GreenBuddy - O Teu Vaso Inteligente</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* Estilos específicos da Landing Page com Design Moderno */
-        body {
-            /* Fundo com degradê moderno em vez de branco chapado */
-            background: linear-gradient(135deg, #f0f4f1 0%, #d9e8d1 100%);
-            margin: 0;
-            min-height: 100vh;
-        }
+        body { margin: 0; min-height: 100vh; overflow-x: hidden; }
 
+        /* NAVBAR COM BLUR E POSIÇÃO FIXA */
         .navbar {
             width: 100%;
-            padding: 30px 60px;
+            padding: 20px 60px;
             display: flex;
-            justify-content: flex-end; /* Empurra o botão para a direita */
+            justify-content: space-between; 
             align-items: center;
-            position: absolute;
+            position: fixed; 
             top: 0;
+            left: 0;
             box-sizing: border-box;
-            z-index: 100;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        .logo-mini {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%); /* Garante o centro perfeito na horizontal */
+        .logo-mini img { 
+            height: 70px; 
+            display: block; 
         }
 
-        .logo-mini img {
-            height: 80px; /* Tamanho atualizado para 80px */
-            display: block;
-        }
-
+        /* O BOTÃO APETITOSO (RESTAURADO E MELHORADO) */
         .btn-login {
-            background: #2d5a27;
+            background: linear-gradient(45deg, #2d5a27, #4caf50);
             color: white;
-            padding: 12px 30px;
+            padding: 14px 35px;
             border-radius: 50px;
             text-decoration: none;
-            font-weight: bold;
-            box-shadow: 0 4px 15px rgba(45, 90, 39, 0.2);
-            transition: all 0.3s ease;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-size: 0.85rem;
+            box-shadow: 0 4px 15px rgba(45, 90, 39, 0.4), inset 0 0 10px rgba(255,255,255,0.2);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
         }
 
         .btn-login:hover {
-            background: #3e7a36;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(45, 90, 39, 0.3);
+            transform: scale(1.1) translateY(-3px);
+            box-shadow: 0 12px 25px rgba(76, 175, 80, 0.5);
+            background: linear-gradient(45deg, #3e7a36, #66bb6a);
         }
 
+        /* Efeito de brilho "passante" */
+        .btn-login::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(120deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: all 0.6s;
+        }
+
+        .btn-login:hover::before {
+            left: 100%;
+        }
+
+        /* CONTEÚDO DESCIDO PARA EVITAR ESPAÇO VAZIO */
         .hero {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 180px 10% 80px; /* Aumentado ligeiramente para acomodar o logo de 80px */
-            gap: 50px;
+            padding: 250px 10% 100px; 
+            gap: 60px;
             flex-wrap: wrap;
         }
 
         .hero-text { 
-            max-width: 550px; 
-            background: rgba(255, 255, 255, 0.4); /* Efeito de vidro */
+            max-width: 600px; 
+            background: rgba(255, 255, 255, 0.6);
             padding: 40px;
             border-radius: 30px;
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(15px);
             border: 1px solid rgba(255, 255, 255, 0.5);
+            animation: fadeInSlide 1s ease-out;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.05);
         }
 
         .hero-text h1 { 
-            font-size: 4rem; 
+            font-size: 4.5rem; 
             color: #1b3d17; 
             margin-bottom: 20px;
-            letter-spacing: -2px;
-        }
-
-        .hero-text p { 
-            font-size: 1.25rem; 
-            color: #444; 
-            line-height: 1.8; 
-            margin-bottom: 30px;
-        }
-
-        .product-img {
-            position: relative;
+            letter-spacing: -3px;
+            line-height: 1;
         }
 
         .product-img img {
-            max-width: 500px;
-            filter: drop-shadow(0 30px 50px rgba(0,0,0,0.15));
+            max-width: 550px;
+            filter: drop-shadow(0 30px 60px rgba(0,0,0,0.15));
             animation: float 6s ease-in-out infinite;
         }
 
-        /* Animação para o vaso flutuar levemente */
         @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-20px); }
-            100% { transform: translateY(0px); }
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(2deg); }
         }
 
-        .price-tag {
-            font-size: 2.5rem;
-            color: #2d5a27;
-            font-weight: 800;
-            margin-bottom: 25px;
-            display: block;
+        @keyframes fadeInSlide {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
         }
 
-        .btn-buy {
-            background: #ffc107;
-            color: #1b3d17;
-            padding: 20px 50px;
-            border-radius: 15px;
-            text-decoration: none;
-            font-size: 1.4rem;
-            font-weight: bold;
-            display: inline-block;
-            transition: all 0.3s ease;
-            box-shadow: 0 10px 20px rgba(255, 193, 7, 0.2);
-        }
-
-        .btn-buy:hover {
-            background: #ffca2c;
-            transform: scale(1.05);
-            box-shadow: 0 15px 30px rgba(255, 193, 7, 0.3);
-        }
-
-        /* Ajuste para ecrãs pequenos */
         @media (max-width: 768px) {
-            .navbar { padding: 20px; }
-            .hero-text h1 { font-size: 2.5rem; }
-            .product-img img { max-width: 300px; }
-            .logo-mini { position: relative; left: 0; transform: none; margin-bottom: 15px; }
-            .navbar { flex-direction: column; position: relative; }
+            .navbar { padding: 15px 30px; }
+            .hero { padding-top: 150px; }
+            .hero-text h1 { font-size: 3rem; }
+            .product-img img { max-width: 320px; }
         }
     </style>
 </head>
@@ -144,22 +127,28 @@
 
     <nav class="navbar">
         <div class="logo-mini">
-            <img src="img/logotipo_PAP.png" alt="Logo">
+            <img src="img/logotipo_PAP.png" alt="Logo GreenBuddy">
         </div>
-
         <a href="login.php" class="btn-login">Iniciar Sessão</a>
     </nav>
 
     <section class="hero">
         <div class="hero-text">
             <h1>GreenBuddy</h1>
-            <p>Nunca mais deixes as tuas plantas morrerem. O sistema de rega inteligente que cuida do que é importante para ti, de forma automática e controlada pelo telemóvel.</p>
-            <span class="price-tag">49,99€</span>
-            <a href="#" class="btn-buy">Comprar Agora</a>
+            <p>Um sistema de rega autónomo desenvolvido com <strong>tecnologia Arduino</strong>.</p>
+            
+            <ul class="features-list">
+                <li><strong>Leitura de Humidade:</strong> Monitorização real do solo.</li>
+                <li><strong>Controlo Personalizado:</strong> Define os teus limites via web.</li>
+                <li><strong>Rega Inteligente:</strong> Ativação e paragem automática.</li>
+                <li><strong>Ciclo Infinito:</strong> Automação total 24/7.</li>
+            </ul>
+
+            <p class="login-instruction">Para entrares no sistema, clica em <strong>"Iniciar Sessão"</strong> no topo da página.</p>
         </div>
         
         <div class="product-img">
-            <img src="img/logotipo_PAP.png" alt="GreenBuddy Vaso">
+            <img src="img/logotipo_PAP.png" alt="GreenBuddy Logo">
         </div>
     </section>
 

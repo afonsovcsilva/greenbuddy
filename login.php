@@ -1,226 +1,161 @@
-<?php
-require "db.php"; 
-session_start();
-
-$erro = "";
-$modo = $_GET['modo'] ?? 'login';
-
-// --- LÓGICA DE LOGIN ---
-if (isset($_POST['btn-login'])) {
-    $user = mysqli_real_escape_string($conn, $_POST['username']);
-    $pass = $_POST['senha'];
-
-    $stmt = $conn->prepare("SELECT id_utilizador, username, senha FROM utilizadores WHERE username = ?");
-    $stmt->bind_param("s", $user);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if ($row = $result->fetch_assoc()) {
-        if (password_verify($pass, $row['senha'])) {
-            $_SESSION['user_id'] = $row['id_utilizador'];
-            $_SESSION['username'] = $row['username'];
-            header("Location: recebe.php");
-            exit;
-        } else {
-            $erro = "Senha incorreta!";
-        }
-    } else {
-        $erro = "Utilizador não encontrado!";
-    }
-}
-
-// --- LÓGICA DE REGISTO ---
-if (isset($_POST['btn-registar'])) {
-    $user = mysqli_real_escape_string($conn, $_POST['username']);
-    $pass = password_hash($_POST['senha'], PASSWORD_DEFAULT);
-    $mail = mysqli_real_escape_string($conn, $_POST['email']);
-    $tel  = mysqli_real_escape_string($conn, $_POST['telemovel']);
-
-    $stmt = $conn->prepare("INSERT INTO utilizadores (username, senha, email, telemovel) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("ssss", $user, $pass, $mail, $tel);
-    
-    if ($stmt->execute()) {
-        header("Location: login.php?modo=login&sucesso=1");
-        exit;
-    } else {
-        $erro = "Erro ao registar: " . $conn->error;
-    }
-}
-?>
-
 <!DOCTYPE html>
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GreenBuddy - Login</title>
+    <title>GreenBuddy - O Teu Vaso Inteligente</title>
     <link rel="stylesheet" href="style.css">
     <style>
+        /* Estilos críticos de estrutura e animação de fundo */
         body { 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            min-height: 100vh; 
-            /* Mesmo degradê da index para consistência */
-            background: linear-gradient(135deg, #f0f4f1 0%, #d9e8d1 100%);
             margin: 0; 
-            font-family: 'Segoe UI', Roboto, sans-serif; 
+            min-height: 100vh; 
+            overflow-x: hidden;
+            background: #f0f7f0; 
+            position: relative;
         }
 
-        .auth-card { 
-            background: rgba(255, 255, 255, 0.7); /* Efeito de vidro */
+        /* Elementos Decorativos de Folhas no Fundo */
+        .leaf-bg {
+            position: fixed;
+            z-index: -1;
+            opacity: 0.15;
+            filter: blur(2px);
+            animation: floatLeaf 10s ease-in-out infinite;
+        }
+
+        @keyframes floatLeaf {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-40px) rotate(15deg); }
+        }
+
+        /* Navbar Premium */
+        .navbar {
+            width: 100%;
+            padding: 25px 60px;
+            display: flex;
+            justify-content: space-between; 
+            align-items: center;
+            position: fixed; 
+            top: 0;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.2);
             backdrop-filter: blur(15px);
-            padding: 2.5rem; 
-            border-radius: 30px; 
-            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
-            width: 100%; 
-            max-width: 400px; 
-            text-align: center; 
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .logo-mini img { height: 75px; }
+
+        /* Botão Iniciar Sessão - Super Apetitoso */
+        .btn-login {
+            background: linear-gradient(135deg, #2d5a27 0%, #4caf50 100%);
+            color: white;
+            padding: 15px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 0.85rem;
+            box-shadow: 0 10px 20px rgba(45, 90, 39, 0.3), inset 0 4px 10px rgba(255,255,255,0.3);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-login:hover {
+            transform: scale(1.1) translateY(-5px);
+            box-shadow: 0 15px 30px rgba(76, 175, 80, 0.4);
+        }
+
+        /* Conteúdo Principal */
+        .hero {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 240px 10% 100px; 
+            gap: 80px;
+            flex-wrap: wrap;
+        }
+
+        .hero-text { 
+            max-width: 620px; 
+            background: rgba(255, 255, 255, 0.7);
+            padding: 50px;
+            border-radius: 40px;
+            backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.08);
+            animation: slideUp 1s ease-out;
         }
 
-        .logo-login img { 
-            max-width: 160px; 
-            margin-bottom: 1rem;
-            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.05));
+        .hero-text h1 { 
+            font-size: 5rem; 
+            color: #1b3d17; 
+            margin-bottom: 25px;
+            letter-spacing: -4px;
+            background: linear-gradient(to bottom, #1b3d17, #2d5a27);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
-        h2 { color: #1b3d17; margin-bottom: 1.5rem; font-weight: 700; }
-
-        .input-group { text-align: left; margin-bottom: 20px; }
-        .input-group label { 
-            display: block; 
-            font-size: 0.9rem; 
-            color: #2d5a27; 
-            margin-bottom: 8px; 
-            font-weight: 600;
+        .product-img img {
+            max-width: 580px;
+            filter: drop-shadow(0 40px 80px rgba(0,0,0,0.2));
+            animation: floatProduct 6s ease-in-out infinite;
         }
 
-        input { 
-            width: 100%; 
-            padding: 14px; 
-            border: 1px solid rgba(0,0,0,0.1); 
-            border-radius: 12px; 
-            box-sizing: border-box; 
-            font-size: 1rem; 
-            background: rgba(255, 255, 255, 0.9);
-            transition: all 0.3s ease;
+        @keyframes floatProduct {
+            0%, 100% { transform: translateY(0) rotate(-2deg); }
+            50% { transform: translateY(-30px) rotate(2deg); }
         }
 
-        input:focus {
-            outline: none;
-            border-color: #2d5a27;
-            box-shadow: 0 0 0 4px rgba(45, 90, 39, 0.1);
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(50px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .btn { 
-            width: 100%; 
-            padding: 15px; 
-            background: #2d5a27; 
-            color: white; 
-            border: none; 
-            border-radius: 12px; 
-            cursor: pointer; 
-            font-weight: bold; 
-            font-size: 1rem; 
-            transition: all 0.3s ease; 
-            margin-top: 10px; 
-            box-shadow: 0 4px 12px rgba(45, 90, 39, 0.2);
+        @media (max-width: 768px) {
+            .navbar { padding: 15px 30px; }
+            .hero-text h1 { font-size: 3.5rem; }
+            .product-img img { max-width: 100%; }
         }
-
-        .btn:hover { 
-            background: #3e7a36; 
-            transform: translateY(-2px);
-            box-shadow: 0 6px 15px rgba(45, 90, 39, 0.3);
-        }
-
-        .btn-voltar { 
-            display: inline-block;
-            width: 100%; 
-            padding: 12px; 
-            background: transparent; 
-            color: #666; 
-            text-decoration: none; 
-            border-radius: 12px; 
-            font-weight: 600; 
-            font-size: 0.9rem; 
-            margin-top: 15px;
-            transition: 0.3s;
-            border: 1px solid #ddd;
-        }
-
-        .btn-voltar:hover { 
-            background: rgba(0,0,0,0.05); 
-            color: #333;
-        }
-
-        .erro-msg { color: #dc3545; background: #f8d7da; padding: 12px; border-radius: 10px; margin-bottom: 20px; font-size: 0.85rem; border: 1px solid #f5c6cb; }
-        .sucesso-msg { color: #155724; background: #d4edda; padding: 12px; border-radius: 10px; margin-bottom: 20px; font-size: 0.85rem; border: 1px solid #c3e6cb; }
-        
-        .toggle-link { 
-            display: block; 
-            margin-top: 20px; 
-            font-size: 0.9rem; 
-            color: #2d5a27; 
-            text-decoration: none; 
-            font-weight: bold;
-        }
-        
-        .toggle-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
 
-<div class="auth-card">
-    <div class="logo-login">
-        <img src="img/logotipo_PAP.png" alt="GreenBuddy">
-    </div>
+    <div class="leaf-bg" style="top: 10%; left: 5%; width: 100px;">🌱</div>
+    <div class="leaf-bg" style="top: 60%; left: 85%; width: 150px; animation-delay: 2s;">🌿</div>
+    <div class="leaf-bg" style="top: 80%; left: 10%; width: 80px; animation-delay: 4s;">🍃</div>
 
-    <?php 
-        if($erro) echo "<div class='erro-msg'>$erro</div>"; 
-        if(isset($_GET['sucesso'])) echo "<div class='sucesso-msg'>Conta criada com sucesso! Faça login.</div>";
-    ?>
+    <nav class="navbar">
+        <div class="logo-mini">
+            <img src="img/logotipo_PAP.png" alt="Logo">
+        </div>
+        <a href="login.php" class="btn-login">Iniciar Sessão</a>
+    </nav>
 
-    <?php if ($modo == 'login'): ?>
-        <h2>Bem-Vindo</h2>
-        <form method="POST">
-            <div class="input-group">
-                <label>Utilizador</label>
-                <input type="text" name="username" placeholder="seu username" required>
+    <section class="hero">
+        <div class="hero-text">
+            <h1>GreenBuddy</h1>
+            <p style="font-size: 1.2rem; color: #444; margin-bottom: 30px;">O futuro da rega doméstica, alimentado por <strong>Arduino</strong> e paixão pela natureza.</p>
+            
+            <ul class="features-list">
+                <li><strong>Leitura de Humidade:</strong> Sensores de solo de alta precisão.</li>
+                <li><strong>Controlo Remoto:</strong> Define os teus parâmetros onde quer que estejas.</li>
+                <li><strong>Inteligência Autónoma:</strong> Rega apenas quando a planta realmente precisa.</li>
+                <li><strong>Eco-Friendly:</strong> Otimização máxima do consumo de água.</li>
+            </ul>
+
+            <div class="login-instruction" style="margin-top: 30px;">
+                ✨ Pronto para começar? Clica em <strong>Iniciar Sessão</strong> acima.
             </div>
-            <div class="input-group">
-                <label>Senha</label>
-                <input type="password" name="senha" placeholder="sua senha" required>
-            </div>
-            <button type="submit" name="btn-login" class="btn">Entrar na Dashboard</button>
-            <a href="index.php" class="btn-voltar">← Voltar à Loja</a>
-            <a href="login.php?modo=registo" class="toggle-link">Não tens conta? Criar agora</a>
-        </form>
-    <?php else: ?>
-        <h2>Registar GreenBuddy</h2>
-        <form method="POST">
-            <div class="input-group">
-                <label>Username</label>
-                <input type="text" name="username" placeholder="Como te queres chamar?" required>
-            </div>
-            <div class="input-group">
-                <label>Email</label>
-                <input type="email" name="email" placeholder="exemplo@email.com" required>
-            </div>
-            <div class="input-group">
-                <label>Telemóvel</label>
-                <input type="text" name="telemovel" placeholder="9xxxxxxxx" required>
-            </div>
-            <div class="input-group">
-                <label>Senha</label>
-                <input type="password" name="senha" placeholder="Escolhe uma senha forte" required>
-            </div>
-            <button type="submit" name="btn-registar" class="btn">Confirmar Registo</button>
-            <a href="index.php" class="btn-voltar">← Cancelar</a>
-            <a href="login.php?modo=login" class="toggle-link">Já tens conta? Fazer Login</a>
-        </form>
-    <?php endif; ?>
-</div>
+        </div>
+        
+        <div class="product-img">
+            <img src="img/logotipo_PAP.png" alt="GreenBuddy Vaso">
+        </div>
+    </section>
 
 </body>
 </html>
