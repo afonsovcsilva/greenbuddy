@@ -26,7 +26,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $user = $_POST['usuario'];
         $pass = $_POST['senha'];
 
-        $sql = "SELECT id_utilizador, senha FROM utilizadores WHERE username = ?";
+        // Consulta o utilizador e o seu mac_address
+        $sql = "SELECT id_utilizador, username, senha, mac_address FROM utilizadores WHERE username = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("s", $user);
         $stmt->execute();
@@ -36,8 +37,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $row = $result->fetch_assoc();
             if (password_verify($pass, $row['senha'])) {
                 $_SESSION['user_id'] = $row['id_utilizador']; 
-                $_SESSION['username'] = $user;
-                header("Location: recebe.php");
+                $_SESSION['username'] = $row['username'];
+
+                // LÓGICA DE REDIRECIONAMENTO CORRIGIDA
+                $mac_atual = trim($row['mac_address'] ?? "");
+
+                if (empty($mac_atual)) {
+                    header("Location: ativacao.php");
+                } else {
+                    header("Location: recebe.php");
+                }
                 exit();
             } else {
                 $mensagem = "error|Palavra-passe incorreta!";

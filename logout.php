@@ -2,6 +2,8 @@
 session_start();
 session_unset();
 session_destroy();
-header("Location: login.php"); // Altera para index.php ou login.php conforme o teu projeto
-exit;
+
+// Garante que o redirecionamento vai para o login e não para outro lado
+header("Location: login.php");
+exit();
 ?>
