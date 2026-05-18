@@ -69,7 +69,11 @@ if (isset($_GET['ajax'])) {
     </style>
 </head>
 <body>
-    <div class="header"><span class="logo-text">GreenBuddy</span><a href="logout.php" class="btn-logout">terminar sessão</a></div>
+    <div class="header">
+        <span class="logo-text">GreenBuddy</span>
+        <a href="ativacao.php" class="btn-logout">Voltar aos Vasos</a>
+    </div>
+    
     <div class="card">
         <h3>Estado do Solo</h3>
         <div class="gauge-container"><canvas id="gaugeChart"></canvas><div class="value-display" id="humidade-valor">--%</div></div>

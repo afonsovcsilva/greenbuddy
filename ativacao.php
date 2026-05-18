@@ -15,12 +15,11 @@ if (isset($_POST['btn_ativar'])) {
     $mac = $_POST['mac_address'];
     
     // Atualiza o MAC address do utilizador
-    $sql = "UPDATE utilizadores SET mac_address = ? WHERE id_utilizador = ?";
+    $sql = "UPDATE utilizadores SET mac_address = ?, nome_vaso = NULL WHERE id_utilizador = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("si", $mac, $user_id);
     
     if ($stmt->execute()) {
-        // Recarrega a página para mostrar o novo vaso
         header("Location: ativacao.php");
         exit();
     } else {
@@ -28,8 +27,34 @@ if (isset($_POST['btn_ativar'])) {
     }
 }
 
+// Lógica para Editar o nome do vaso
+if (isset($_POST['btn_editar_nome'])) {
+    $novo_nome = $_POST['novo_nome'];
+    
+    $sql = "UPDATE utilizadores SET nome_vaso = ? WHERE id_utilizador = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("si", $novo_nome, $user_id);
+    
+    if ($stmt->execute()) {
+        header("Location: ativacao.php");
+        exit();
+    }
+}
+
+// Lógica para Apagar/Desvincular o vaso
+if (isset($_POST['btn_remover_vaso'])) {
+    $sql = "UPDATE utilizadores SET mac_address = NULL, nome_vaso = NULL WHERE id_utilizador = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $user_id);
+    
+    if ($stmt->execute()) {
+        header("Location: ativacao.php");
+        exit();
+    }
+}
+
 // Consulta para verificar se o utilizador já tem um vaso
-$sql_check = "SELECT mac_address FROM utilizadores WHERE id_utilizador = ?";
+$sql_check = "SELECT mac_address, nome_vaso FROM utilizadores WHERE id_utilizador = ?";
 $stmt_check = $conn->prepare($sql_check);
 $stmt_check->bind_param("i", $user_id);
 $stmt_check->execute();
@@ -37,6 +62,7 @@ $result = $stmt_check->get_result();
 $user_data = $result->fetch_assoc();
 
 $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
+$nome_exibicao = !empty(trim($user_data['nome_vaso'] ?? "")) ? $user_data['nome_vaso'] : "Meu Vaso Principal";
 ?>
 
 <!DOCTYPE html>
@@ -56,7 +82,7 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
             min-height: 100vh; 
         }
 
-        /* Header e Botão Adicionar */
+        /* Header Atualizado para 3 elementos */
         .header {
             width: 100%;
             max-width: 800px;
@@ -67,6 +93,22 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
             box-sizing: border-box;
         }
 
+        /* Botão Novo de Sair */
+        .btn-logout-back {
+            text-decoration: none;
+            color: #cc4444;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 10px 20px;
+            background: rgba(204,68,68,0.1);
+            border-radius: 50px;
+            transition: 0.3s;
+        }
+
+        .btn-logout-back:hover {
+            background: rgba(204,68,68,0.2);
+        }
+
         .btn-add {
             background: #2d5a27;
             color: white;
@@ -75,45 +117,48 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
             border-radius: 50px;
             font-weight: bold;
             cursor: pointer;
-            text-decoration: none;
             transition: 0.3s;
         }
 
         .btn-add:hover { background: #3e7a36; }
 
-        /* Estado Vazio */
         .empty-state {
             margin-top: 100px;
             text-align: center;
             color: #888;
         }
 
-        .empty-state i { font-size: 50px; display: block; margin-bottom: 10px; }
-
-        /* Card do Vaso */
         .devices-container {
             width: 90%;
-            max-width: 500px;
+            max-width: 550px;
             margin-top: 20px;
+            position: relative;
+        }
+
+        .card-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+            border: 2px solid transparent;
+            transition: 0.3s;
+        }
+
+        .card-wrapper:hover {
+            transform: translateY(-5px);
+            border-color: #2d5a27;
         }
 
         .device-card {
-            background: white;
-            padding: 20px;
-            border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
             display: flex;
             align-items: center;
-            cursor: pointer;
-            transition: 0.3s;
-            border: 2px solid transparent;
+            padding: 20px;
+            flex-grow: 1;
             text-decoration: none;
             color: inherit;
-        }
-
-        .device-card:hover {
-            transform: translateY(-5px);
-            border-color: #2d5a27;
+            cursor: pointer;
         }
 
         .device-icon {
@@ -131,8 +176,65 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
         .device-info h3 { margin: 0; color: #2d5a27; }
         .device-info p { margin: 2px 0 0; font-size: 0.8rem; color: #777; }
 
-        /* Modal (Formulário Oculto) */
-        #modal-add {
+        .options-menu {
+            position: relative;
+            margin-right: 15px;
+        }
+
+        .btn-dots {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #888;
+            cursor: pointer;
+            padding: 10px;
+            border-radius: 50px;
+            line-height: 1;
+        }
+
+        .btn-dots:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 40px;
+            background-color: white;
+            min-width: 130px;
+            box-shadow: 0px 8px 16px rgba(0,0,0,0.15);
+            border-radius: 12px;
+            z-index: 10;
+            overflow: hidden;
+            border: 1px solid #eee;
+        }
+
+        .dropdown-content button {
+            width: 100%;
+            background: none;
+            border: none;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 0.9rem;
+            cursor: pointer;
+            color: #333;
+        }
+
+        .dropdown-content button:hover {
+            background-color: #f5f5f5;
+        }
+
+        .dropdown-content button.delete-option {
+            color: #c62828;
+        }
+
+        .dropdown-content button.delete-option:hover {
+            background-color: #ffebee;
+        }
+
+        .modal {
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -149,6 +251,7 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
             text-align: center;
             width: 90%;
             max-width: 350px;
+            box-sizing: border-box;
         }
 
         .modal-content input {
@@ -159,6 +262,7 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
             border: 1px solid #ddd;
             box-sizing: border-box;
             text-align: center;
+            font-size: 1rem;
         }
 
         .btn-cancel {
@@ -166,15 +270,31 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
             border: none;
             color: #888;
             cursor: pointer;
-            margin-top: 10px;
+            margin-top: 15px;
+            font-weight: 600;
         }
+
+        .btn-danger {
+            background: #c62828;
+            color: white;
+            border: none;
+            padding: 12px;
+            width: 100%;
+            border-radius: 50px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn-danger:hover { background: #b71c1c; }
     </style>
 </head>
 <body>
 
     <div class="header">
+        <a href="logout.php" class="btn-logout-back">Terminar Sessão</a>
+        
         <img src="img/logotipo_PAP.png" style="height: 40px;">
-        <button class="btn-add" onclick="openModal()">+ Adicionar Vaso</button>
+        
+        <button class="btn-add" onclick="openModal('modal-add')">+ Adicionar Vaso</button>
     </div>
 
     <?php if (!$tem_vaso): ?>
@@ -185,41 +305,91 @@ $tem_vaso = !empty(trim($user_data['mac_address'] ?? ""));
         </div>
     <?php else: ?>
         <div class="devices-container">
-            <a href="recebe.php" class="device-card">
-                <div class="device-icon">🌿</div>
-                <div class="device-info">
-                    <h3>Meu Vaso Principal</h3>
-                    <p>MAC: <?php echo $user_data['mac_address']; ?></p>
+            <div class="card-wrapper">
+                <a href="recebe.php" class="device-card">
+                    <div class="device-icon">🌿</div>
+                    <div class="device-info">
+                        <h3><?php echo htmlspecialchars($nome_exibicao); ?></h3>
+                        <p>MAC: <?php echo htmlspecialchars($user_data['mac_address']); ?></p>
+                    </div>
+                </a>
+
+                <div class="options-menu">
+                    <button class="btn-dots" onclick="toggleDropdown(event)">⋮</button>
+                    <div id="myDropdown" class="dropdown-content">
+                        <button onclick="openModal('modal-edit')">✏️ Editar Nome</button>
+                        <button class="delete-option" onclick="openModal('modal-delete')">🗑️ Apagar Vaso</button>
+                    </div>
                 </div>
-            </a>
+            </div>
         </div>
     <?php endif; ?>
 
-    <div id="modal-add">
+    <div id="modal-add" class="modal">
         <div class="modal-content">
             <h3>Novo Dispositivo</h3>
-            <p>Insere o código MAC do teu vaso</p>
+            <p>Insere o código do teu vaso</p>
             <form method="POST">
                 <input type="text" name="mac_address" placeholder="00:00:00:00:00:00" required>
-                <button type="submit" name="btn_ativar" class="btn-add" style="width: 100%;">Vincular Agora</button>
+                <button type="submit" name="btn_ativar" class="btn-add" style="width: 100%; padding: 12px; border-radius: 50px;">Vincular Agora</button>
             </form>
-            <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+            <button class="btn-cancel" onclick="closeModal('modal-add')">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="modal-edit" class="modal">
+        <div class="modal-content">
+            <h3>Editar Nome do Vaso</h3>
+            <p>Escolhe um nome para identificar o teu vaso</p>
+            <form method="POST">
+                <input type="text" name="novo_nome" value="<?php echo htmlspecialchars($nome_exibicao); ?>" required maxlength="50">
+                <button type="submit" name="btn_editar_nome" class="btn-add" style="width: 100%; padding: 12px; border-radius: 50px;">Guardar Nome</button>
+            </form>
+            <button class="btn-cancel" onclick="closeModal('modal-edit')">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="modal-delete" class="modal">
+        <div class="modal-content">
+            <div style="font-size: 40px; margin-bottom: 10px;">⚠️</div>
+            <h3>Apagar Dispositivo?</h3>
+            <p>Tens a certeza que queres desvincular este vaso? Terás de introduzir o código novamente se quiseres voltar a aceder.</p>
+            <form method="POST">
+                <button type="submit" name="btn_remover_vaso" class="btn-danger">Sim, Eliminar</button>
+            </form>
+            <button class="btn-cancel" onclick="closeModal('modal-delete')">Cancelar</button>
         </div>
     </div>
 
     <script>
-        function openModal() {
-            document.getElementById('modal-add').style.display = 'flex';
+        function openModal(id) {
+            document.getElementById(id).style.display = 'flex';
+            var dropdown = document.getElementById("myDropdown");
+            if(dropdown) dropdown.style.display = "none";
         }
-        function closeModal() {
-            document.getElementById('modal-add').style.display = 'none';
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
         }
 
-        // Fecha o modal se clicar fora dele
+        function toggleDropdown(event) {
+            event.stopPropagation();
+            var dropdown = document.getElementById("myDropdown");
+            if (dropdown.style.display === "block") {
+                dropdown.style.display = "none";
+            } else {
+                dropdown.style.display = "block";
+            }
+        }
+
         window.onclick = function(event) {
-            var modal = document.getElementById('modal-add');
-            if (event.target == modal) {
-                closeModal();
+            if (!event.target.matches('.btn-dots')) {
+                var dropdown = document.getElementById("myDropdown");
+                if (dropdown && dropdown.style.display === "block") {
+                    dropdown.style.display = "none";
+                }
+            }
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
             }
         }
     </script>

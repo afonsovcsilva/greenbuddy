@@ -105,7 +105,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
 
         .toggle-link { display: block; margin-top: 15px; color: #2d5a27; text-decoration: none; font-weight: 600; font-size: 0.75rem; cursor: pointer; }
+        
+        /* Reposta a configuração original: Seta fixa no topo esquerdo do ecrã */
         .back-home { position: absolute; top: 15px; left: 15px; color: #2d5a27; text-decoration: none; font-weight: 700; font-size: 0.8rem; z-index: 10; }
+        
         .hidden { display: none; }
 
         .alert { padding: 8px; border-radius: 8px; margin-bottom: 10px; font-size: 0.8rem; }
@@ -123,7 +126,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </head>
 <body>
 
-    <a href="index.php" class="back-home">← Voltar</a>
+    <a href="index.php" id="seta-voltar" class="back-home">← Voltar</a>
 
     <div class="auth-card">
         <img src="img/logotipo_PAP.png" alt="Logo" style="height: 50px; margin-bottom: 5px;">
@@ -151,7 +154,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
                 <button type="submit" name="btn_login" class="btn-auth">Entrar</button>
             </form>
-            <a class="toggle-link" onclick="toggleAuth()">Criar nova conta</a>
+            <a class="toggle-link" onclick="mostrarRegisto()">Criar nova conta</a>
         </div>
 
         <div id="register-section" <?php if(!isset($_POST['btn_registo']) || (isset($parts) && $parts[0] == 'success')) echo 'class="hidden"'; ?>>
@@ -176,14 +179,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
                 <button type="submit" name="btn_registo" class="btn-auth">Registar</button>
             </form>
-            <a class="toggle-link" onclick="toggleAuth()">Já tenho conta</a>
+            <a class="toggle-link" href="login.php">Já tenho conta</a>
         </div>
     </div>
 
     <script>
-        function toggleAuth() {
-            document.getElementById('login-section').classList.toggle('hidden');
-            document.getElementById('register-section').classList.toggle('hidden');
+        // Função para quando abre a tela de Registo
+        function mostrarRegisto() {
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('register-section').classList.remove('hidden');
+            
+            // Altera o link da seta lá em cima diretamente para recarregar no login.php
+            document.getElementById('seta-voltar').setAttribute('href', 'login.php');
+        }
+
+        // Se a página carregar diretamente com o formulário de registo ativo devido a submissão prévia, ajusta o link da seta
+        window.onload = function() {
+            var reg_section = document.getElementById('register-section');
+            if (reg_section && !reg_section.classList.contains('hidden')) {
+                document.getElementById('seta-voltar').setAttribute('href', 'login.php');
+            }
         }
     </script>
 </body>
