@@ -26,8 +26,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $user = $_POST['usuario'];
         $pass = $_POST['senha'];
 
-        // Consulta o utilizador e o seu mac_address
-        $sql = "SELECT id_utilizador, username, senha, mac_address FROM utilizadores WHERE username = ?";
+        // ATUALIZADO: Busca também as colunas status e is_admin
+        $sql = "SELECT id_utilizador, username, senha, status, is_admin FROM utilizadores WHERE username = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("s", $user);
         $stmt->execute();
@@ -35,19 +35,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         if ($result->num_rows === 1) {
             $row = $result->fetch_assoc();
+            
             if (password_verify($pass, $row['senha'])) {
-                $_SESSION['user_id'] = $row['id_utilizador']; 
-                $_SESSION['username'] = $row['username'];
-
-                // LÓGICA DE REDIRECIONAMENTO CORRIGIDA
-                $mac_atual = trim($row['mac_address'] ?? "");
-
-                if (empty($mac_atual)) {
-                    header("Location: ativacao.php");
+                
+                // ATUALIZADO: Verifica primeiro se o utilizador está bloqueado
+                if (isset($row['status']) && $row['status'] === 'bloqueado') {
+                    $mensagem = "error|A sua conta encontra-se temporariamente bloqueada. Contacte o suporte.";
                 } else {
-                    header("Location: recebe.php");
+                    $_SESSION['user_id'] = $row['id_utilizador']; 
+                    $_SESSION['username'] = $row['username'];
+                    $_SESSION['is_admin'] = $row['is_admin'] ?? 0; // Guarda se é admin na sessão
+
+                    // ATUALIZADO: Redirecionamento Inteligente com base no cargo
+                    if ($_SESSION['is_admin'] == 1) {
+                        header("Location: admin.php"); // Administrador vai para o painel de controlo
+                    } else {
+                        header("Location: ativacao.php"); // Utilizador comum vai para os vasos
+                    }
+                    exit();
                 }
-                exit();
+                
             } else {
                 $mensagem = "error|Palavra-passe incorreta!";
             }
@@ -106,7 +113,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         .toggle-link { display: block; margin-top: 15px; color: #2d5a27; text-decoration: none; font-weight: 600; font-size: 0.75rem; cursor: pointer; }
         
-        /* Reposta a configuração original: Seta fixa no topo esquerdo do ecrã */
         .back-home { position: absolute; top: 15px; left: 15px; color: #2d5a27; text-decoration: none; font-weight: 700; font-size: 0.8rem; z-index: 10; }
         
         .hidden { display: none; }
@@ -184,16 +190,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
 
     <script>
-        // Função para quando abre a tela de Registo
         function mostrarRegisto() {
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('register-section').classList.remove('hidden');
-            
-            // Altera o link da seta lá em cima diretamente para recarregar no login.php
             document.getElementById('seta-voltar').setAttribute('href', 'login.php');
         }
 
-        // Se a página carregar diretamente com o formulário de registo ativo devido a submissão prévia, ajusta o link da seta
         window.onload = function() {
             var reg_section = document.getElementById('register-section');
             if (reg_section && !reg_section.classList.contains('hidden')) {
