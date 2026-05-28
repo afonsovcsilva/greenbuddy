@@ -8,12 +8,12 @@ if (!isset($_SESSION['user_id']) || $_SESSION['is_admin'] != 1) {
     exit();
 }
 
-// LÓGICA DE AÇÕES (Utilizadores e Vasos)
+// LÓGICA DE AÇÕES (Utilizadores e Vasos) CORRIGIDA
 if (isset($_GET['acao'])) {
     $acao = $_GET['acao'];
     $id_alvo = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
-    // Ações em Massa
+    // 1. Ações em Massa
     if ($acao === 'bloquear_todos') {
         $stmt = $conn->prepare("UPDATE utilizadores SET status = 'bloqueado' WHERE is_admin != 1");
         $stmt->execute();
@@ -22,8 +22,8 @@ if (isset($_GET['acao'])) {
         $stmt = $conn->prepare("UPDATE utilizadores SET status = 'ativo' WHERE is_admin != 1");
         $stmt->execute();
     }
-    // Ações de Utilizador Individual
-    elseif ($id_alvo > 0 && $id_alvo != $_SESSION['user_id']) {
+    // 2. Ações de Utilizador Individual (Ligadas por ELSEIF)
+    elseif ($id_alvo > 0 && $id_alvo != $_SESSION['user_id'] && ($acao === 'bloquear' || $acao === 'desbloquear' || $acao === 'remover')) {
         if ($acao === 'bloquear') {
             $stmt = $conn->prepare("UPDATE utilizadores SET status = 'bloqueado' WHERE id_utilizador = ?");
             $stmt->bind_param("i", $id_alvo);
@@ -44,9 +44,8 @@ if (isset($_GET['acao'])) {
             $stmt2->execute();
         }
     }
-    
-    // Ações de Vaso
-    if ($id_alvo > 0) {
+    // 3. Ações de Vaso Individual (Isoladas estritamente pelo tipo de ação)
+    elseif ($id_alvo > 0 && ($acao === 'desativar_vaso' || $acao === 'ativar_vaso')) {
         if ($acao === 'desativar_vaso') {
             $stmt = $conn->prepare("UPDATE vasos SET status_vaso = 'desativado' WHERE id_vaso = ?");
             $stmt->bind_param("i", $id_alvo);
@@ -99,14 +98,12 @@ function renderizarTabelaUtilizadores($conn, $pesquisa = '') {
         $vasos_html = "";
         
         if ($total_vasos > 0) {
-            // Botão de gatilho para expandir os vasos
             $vasos_html .= "<button class='btn-toggle-vasos' onclick='toggleVasos({$user['id_utilizador']})'>
                                 Ver Vasos ({$total_vasos}) <span id='seta-{$user['id_utilizador']}' class='seta'>▼</span>
                             </button>";
             
-            // Contentor colapsável escondido por padrão
             $vasos_html .= "<div id='lista-vasos-{$user['id_utilizador']}' class='vasos-collapse-container'>";
-            $vasos_html .= "<div style='padding-top: 10px;'>"; // Wrapper para evitar quebras de padding na animação
+            $vasos_html .= "<div style='padding-top: 10px;'>"; 
             
             while ($v = $res_vasos->fetch_assoc()) {
                 $status_cor = ($v['status_vaso'] === 'desativado') ? '#d9534f' : '#4caf50';
@@ -218,7 +215,6 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
         .badge-blocked { background: #ffebee; color: #c62828; }
         .badge-admin { background: #e3f2fd; color: #1565c0; }
         
-        /* CSS NOVO: Menu Colapsável dos Vasos */
         .vasos-list { width: 320px; }
         .btn-toggle-vasos { background: #edf2ed; border: 1px solid #d4ded4; color: var(--primary); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s; width: 100%; justify-content: space-between; }
         .btn-toggle-vasos:hover { background: #e0eae0; }
@@ -296,10 +292,8 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
     }
 
     let estadoAtualGlobal = '<?php echo obterEstadoBotaoMassa($conn); ?>';
-    // Objeto global para memorizar quais menus de vasos o Admin deixou abertos
     let menusAbertos = {};
 
-    // Função JavaScript Nova: Controla o Accordion/Menu de vasos individual
     function toggleVasos(userId) {
         const container = document.getElementById(`lista-vasos-${userId}`);
         const seta = document.getElementById(`seta-${userId}`);
@@ -307,11 +301,11 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
         if (container.classList.contains('aberto')) {
             container.classList.remove('aberto');
             seta.classList.remove('rodada');
-            menusAbertos[userId] = false; // Salva que fechou
+            menusAbertos[userId] = false;
         } else {
             container.classList.add('aberto');
             seta.classList.add('rodada');
-            menusAbertos[userId] = true; // Salva que abriu
+            menusAbertos[userId] = true;
         }
     }
 
@@ -322,7 +316,6 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
             .then(data => {
                 document.getElementById('tabela-corpo').innerHTML = data.html;
                 
-                // IMPORTANTE: Reaplica o estado "Aberto" nos menus expandidos após o AJAX atualizar as linhas
                 Object.keys(menusAbertos).forEach(userId => {
                     if (menusAbertos[userId]) {
                         const container = document.getElementById(`lista-vasos-${userId}`);
@@ -350,10 +343,23 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
 
     setInterval(verificarAtualizacoes, 4000);
 
+    // FUNÇÃO CORRIGIDA: Agora força a atualização imediata assim que o servidor responde
     function executarAcao(acao, id) {
         fetch(`admin.php?acao=${acao}&id=${id}&ajax_action=1`)
-            .then(() => {
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Erro na resposta do servidor');
+                }
+                return response.text();
+            })
+            .then(data => {
+                // Força a atualização da tabela no exato momento em que a ação correu bem
                 verificarAtualizacoes();
+            })
+            .catch(err => {
+                console.error('Erro ao executar a ação:', err);
+                // Fallback seguro em caso de falha de rede: recarrega a página de forma nativa
+                window.location.reload();
             });
     }
 

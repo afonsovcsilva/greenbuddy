@@ -1,5 +1,5 @@
 <?php
-// Solução 1: Desativa a exibição de avisos simples (Notices) do servidor,
+// Desativa a exibição de avisos simples (Notices) do servidor,
 // mas mantém os erros graves ativos caso algo falhe criticamente.
 ini_set('display_errors', 0); 
 error_reporting(E_ALL & ~E_NOTICE);
@@ -13,19 +13,73 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $user_id = $_SESSION['user_id'];
+
+// =========================================================================
+// BLOCO DE DIAGNÓSTICO E VERIFICAÇÃO EM TEMPO REAL
+// =========================================================================
+$sql_check_deleted = "SELECT * FROM utilizadores WHERE id_utilizador = ?";
+$stmt_check_deleted = $conn->prepare($sql_check_deleted);
+$stmt_check_deleted->bind_param("i", $user_id);
+$stmt_check_deleted->execute();
+$res_check_deleted = $stmt_check_deleted->get_result();
+
+if ($res_check_deleted->num_rows === 0) {
+    // A conta REALMENTE não existe na BD (foi apagada)
+    if (isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'apagado']);
+        exit();
+    }
+    session_destroy();
+    header("Location: login.php?erro=conta_eliminada"); 
+    exit(); 
+} else {
+    // A conta EXISTE. Vamos ler os dados dela para verificar possíveis colunas de bloqueio
+    $dados_conta = $res_check_deleted->fetch_assoc();
+    
+    $esta_bloqueado = false;
+    if (isset($dados_conta['status']) && $dados_conta['status'] == 0) $esta_bloqueado = true;
+    if (isset($dados_conta['bloqueado']) && $dados_conta['bloqueado'] == 1) $esta_bloqueado = true;
+    if (isset($dados_conta['ativo']) && $dados_conta['ativo'] == 0) $esta_bloqueado = true;
+
+    if ($esta_bloqueado) {
+        if (isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'apagado']);
+            exit();
+        }
+        session_destroy();
+        header("Location: login.php?erro=conta_eliminada"); 
+        exit();
+    }
+}
+
+// Resposta padrão para o JavaScript se a conta estiver ativa
+if (isset($_GET['ajax_check'])) {
+    header('Content-Type: application/json');
+    echo json_encode([
+        'status' => 'ativo',
+        'debug_info' => [
+            'id' => $dados_conta['id_utilizador'],
+            'username' => $dados_conta['username']
+        ]
+    ]);
+    exit();
+}
+// =========================================================================
+
 $mensagem = "";
 $mensagem_perfil = "";
 $sucesso_perfil = false;
 $abrir_modal_erro = false;
 
-// --- LÓGICA DA ÁREA DO UTILIZADOR (ATUALIZAÇÃO DE PERFIL CORRIGIDA) ---
+// --- LÓGICA DA ÁREA DO UTILIZADOR (ATUALIZAÇÃO DE PERFIL) ---
 if (isset($_POST['btn_atualizar_perfil'])) {
     $novo_user = trim($_POST['username']);
     $novo_email = trim($_POST['email']);
     $novo_tel = trim($_POST['telemovel']);
     $nova_pass = $_POST['password'];
 
-    // Buscar os dados ATUAIS vindos diretamente da base de dados antes de validar
     $sql_atual = "SELECT username, email FROM utilizadores WHERE id_utilizador = ?";
     $stmt_atual = $conn->prepare($sql_atual);
     $stmt_atual->bind_param("i", $user_id);
@@ -34,7 +88,6 @@ if (isset($_POST['btn_atualizar_perfil'])) {
 
     $conflito = false;
 
-    // 1. Se alterou o username, verifica se o NOVO já existe em uso por outrem
     if ($novo_user !== $dados_atuais['username']) {
         $sql_check_user = "SELECT id_utilizador FROM utilizadores WHERE username = ?";
         $stmt_check_user = $conn->prepare($sql_check_user);
@@ -46,7 +99,6 @@ if (isset($_POST['btn_atualizar_perfil'])) {
         }
     }
 
-    // 2. Se alterou o email, verifica se o NOVO já existe em uso por outrem
     if (!$conflito && $novo_email !== $dados_atuais['email']) {
         $sql_check_email = "SELECT id_utilizador FROM utilizadores WHERE email = ?";
         $stmt_check_email = $conn->prepare($sql_check_email);
@@ -58,7 +110,6 @@ if (isset($_POST['btn_atualizar_perfil'])) {
         }
     }
 
-    // 3. Se não houver conflitos com terceiros, procede à atualização
     if (!$conflito) {
         $sql_update = "UPDATE utilizadores SET username = ?, email = ?, telemovel = ? WHERE id_utilizador = ?";
         $stmt_update = $conn->prepare($sql_update);
@@ -68,7 +119,6 @@ if (isset($_POST['btn_atualizar_perfil'])) {
             $sucesso_perfil = true;
             $mensagem_perfil = "Dados atualizados com sucesso!";
             
-            // 4. Atualizar a password apenas se o campo não estiver vazio
             if (!empty($nova_pass)) {
                 $pass_encriptada = password_hash($nova_pass, PASSWORD_DEFAULT);
                 $sql_pass = "UPDATE utilizadores SET password = ? WHERE id_utilizador = ?";
@@ -86,7 +136,6 @@ if (isset($_POST['btn_atualizar_perfil'])) {
 if (isset($_POST['btn_ativar'])) {
     $mac = strtoupper(trim($_POST['mac_address']));
     $nome_padrao = "Meu Vaso Principal";
-    
     $mac_limpo = preg_replace('/[^0-9A-F]/', '', $mac);
     
     if (strlen($mac_limpo) !== 12) {
@@ -113,7 +162,7 @@ if (isset($_POST['btn_ativar'])) {
         $res_device = $stmt_device->get_result();
 
         if ($res_device->num_rows > 0) {
-            $mensagem = "Este dispositivo já está vinculado a uma conta.";
+            $mensagem = "Este dispositivo já está personalizado a uma conta.";
             $abrir_modal_erro = true;
         } else {
             $sql = "INSERT INTO vasos (id_utilizador, mac_address, nome_vaso) VALUES (?, ?, ?)";
@@ -160,7 +209,7 @@ if (isset($_POST['btn_remover_vaso'])) {
     }
 }
 
-// Buscar dados atuais do utilizador para os inputs do perfil
+// Buscar dados atuais do utilizador para os inputs
 $sql_user = "SELECT username, email, telemovel FROM utilizadores WHERE id_utilizador = ?";
 $stmt_user = $conn->prepare($sql_user);
 $stmt_user->bind_param("i", $user_id);
@@ -347,11 +396,16 @@ $tem_vasos = (count($lista_vasos) > 0);
             box-shadow: 0 10px 20px rgba(0,0,0,0.05);
             border: 2px solid transparent;
             transition: 0.3s;
+            z-index: 1;
         }
 
         .card-wrapper:hover {
             transform: translateY(-3px);
             border-color: #2d5a27;
+        }
+
+        .card-wrapper:focus-within {
+            z-index: 999;
         }
 
         .device-card {
@@ -379,20 +433,10 @@ $tem_vasos = (count($lista_vasos) > 0);
         .device-info h3 { margin: 0; color: #2d5a27; }
         .device-info p { margin: 2px 0 0; font-size: 0.8rem; color: #777; }
 
-        .options-menu { position: relative; margin-right: 15px; }
-
-        .btn-dots {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: #888;
-            cursor: pointer;
-            padding: 10px;
-            border-radius: 50px;
-            line-height: 1;
+        .options-menu { 
+            position: relative; 
+            margin-right: 15px; 
         }
-
-        .btn-dots:hover { background: #f0f0f0; color: #333; }
 
         .dropdown-content {
             display: none;
@@ -403,7 +447,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             min-width: 140px;
             box-shadow: 0px 8px 16px rgba(0,0,0,0.15);
             border-radius: 12px;
-            z-index: 10;
+            z-index: 1000;
             overflow: hidden;
             border: 1px solid #eee;
         }
@@ -430,7 +474,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             background: rgba(0,0,0,0.5);
             justify-content: center;
             align-items: center;
-            z-index: 100;
+            z-index: 10000;
         }
 
         .modal-content {
@@ -575,7 +619,7 @@ $tem_vasos = (count($lista_vasos) > 0);
                         </a>
 
                         <div class="options-menu">
-                            <button class="btn-dots" onclick="toggleDropdown(event, 'dropdown-<?php echo $vaso['id_vaso']; ?>')">⋮</button>
+                            <button style="background: none; border: none; font-size: 1.5rem; color: #888; cursor: pointer; padding: 5px 10px; border-radius: 50%;" onclick="toggleDropdown(event, 'dropdown-<?php echo $vaso['id_vaso']; ?>')">⋮</button>
                             <div id="dropdown-<?php echo $vaso['id_vaso']; ?>" class="dropdown-content">
                                 <button onclick="openModalEdit('<?php echo $vaso['id_vaso']; ?>', '<?php echo htmlspecialchars($vaso['nome_vaso']); ?>')">✏️ Editar Nome</button>
                                 <button class="delete-option" onclick="openModalDelete('<?php echo $vaso['id_vaso']; ?>')">🗑️ Apagar Vaso</button>
@@ -674,25 +718,23 @@ $tem_vasos = (count($lista_vasos) > 0);
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('Service Worker ativo com sucesso!', reg))
-                    .catch(err => console.log('Erro ao registar Service Worker:', err));
+                    .then(reg => console.log('Service Worker ativo!', reg))
+                    .catch(err => console.log('Erro Service Worker:', err));
             });
         }
 
+        // Loop de monitorização em segundo plano (Corrigido e funcional)
         function monitorarConta() {
-            fetch('verificar_status.php')
-                .then(response => response.json())
-                .then(data => {
-                    const ecranBloqueio = document.getElementById('bloqueio-remoto');
-                    if (data.status === 'bloqueado') {
-                        ecranBloqueio.classList.remove('hidden');
-                        document.body.style.overflow = 'hidden'; 
-                    } else {
-                        ecranBloqueio.classList.add('hidden');
-                        document.body.style.overflow = ''; 
-                    }
-                })
-                .catch(err => console.log('Erro ao verificar conta:', err));
+            fetch('ativacao.php?ajax_check=1', {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.status === 'apagado') {
+                    document.getElementById('bloqueio-remoto').classList.remove('hidden');
+                }
+            })
+            .catch(err => console.log('A monitorizar conta...'));
         }
         setInterval(monitorarConta, 3000);
         monitorarConta();
@@ -716,6 +758,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             }
         }
 
+        // Se houver uma mensagem de perfil vinda do PHP, força a aba de Perfil a abrir
         <?php if (!empty($mensagem_perfil)): ?>
             switchTab('perfil');
         <?php endif; ?>
@@ -725,6 +768,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             fecharTodosDropdowns();
         }
 
+        // CORREÇÃO AQUI: .style.display em vez de .style.none
         function closeModal(id) {
             document.getElementById(id).style.display = 'none';
         }
@@ -758,7 +802,7 @@ $tem_vasos = (count($lista_vasos) > 0);
         }
 
         window.onclick = function(event) {
-            if (!event.target.matches('.btn-dots')) {
+            if (!event.target.closest('.options-menu')) {
                 fecharTodosDropdowns();
             }
             if (event.target.classList.contains('modal')) {
