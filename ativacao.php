@@ -170,6 +170,19 @@ if (isset($_POST['btn_ativar'])) {
             $stmt->bind_param("iss", $user_id, $mac_formatado, $nome_padrao);
             
             if ($stmt->execute()) {
+                // --- INÍCIO DA ALTERAÇÃO PEDIDA ---
+                // Obtém o ID do vaso que o MySQL acabou de gerar automaticamente
+                $novo_id_vaso = $conn->insert_id;
+                $seco_inicial = 0;
+                $humido_inicial = 0;
+
+                // Insere automaticamente a configuração inicial com 0 para esse novo ID
+                $sql_config = "INSERT INTO vaso_config (id, seco_limite, humido_limite) VALUES (?, ?, ?)";
+                $stmt_config = $conn->prepare($sql_config);
+                $stmt_config->bind_param("iii", $novo_id_vaso, $seco_inicial, $humido_inicial);
+                $stmt_config->execute();
+                // --- FIM DA ALTERAÇÃO PEDIDA ---
+
                 header("Location: ativacao.php");
                 exit();
             } else {

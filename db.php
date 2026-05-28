@@ -1,29 +1,19 @@
 <?php
+// Deteta se existem as variáveis de ambiente do Railway, caso contrário usa o teu localhost
+$host     = getenv('MYSQLHOST')     ?: "mysql"; 
+$dbname   = getenv('MYSQLDATABASE') ?: "greenbuddydb";
+$username = getenv('MYSQLUSER')     ?: "green";
+$passsn   = getenv('MYSQLPASSWORD') ?: "buddy";
+$port     = getenv('MYSQLPORT')     ?: "3306";
 
-$host = "mysql"; //"127.0.0.1";      // servidor (ou IP)
-$dbname = "greenbuddydb";     // nome da base de dados
-$username = "green";       // utilizador MySQL
-$passn = "buddy";           // password (vazia em XAMPP)
-/*
-try {
-    $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8",
-        $username,
-        $password
-    );
+// Conexão utilizando mysqli (passando também a porta configurada)
+$conn = new mysqli($host, $username, $passsn, $dbname, $port);
 
-    // ativa erros (importante para debug)
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-} catch (PDOException $e) {
-    die("Erro na ligação à base de dados: " . $e->getMessage());
-}
-*/
-$conn = new mysqli($host, $username, $passn, $dbname);
-
-// verificar ligação
+// Verificar a ligação
 if ($conn->connect_error) {
     die("Erro na ligação à base de dados: " . $conn->connect_error);
 }
 
+// Configura o charset para evitar problemas com acentos e caracteres especiais
+$conn->set_charset("utf8");
 ?>
