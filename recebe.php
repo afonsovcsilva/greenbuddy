@@ -3,36 +3,84 @@ require "db.php";
 session_start(); 
 date_default_timezone_set('Europe/Lisbon');
 
-// Captura o ID do vaso que vem da URL (GET) ou do formulário (POST). Se não vier nenhum, assume o 1.
+if (!isset($_SESSION['user_id'])) { 
+    header("Location: login.php"); 
+    exit(); 
+}
+
+$user_id = $_SESSION['user_id'];
 $id_vaso = isset($_GET['id']) ? intval($_GET['id']) : (isset($_POST['id_vaso']) ? intval($_POST['id_vaso']) : 1);
 
-// --- NOVA CONSULTA: Puxar o nome personalizado do vaso ---
+// =========================================================================
+// VERIFICAÇÃO DE BLOQUEIO REAL: FOI DESATIVADO O VASO OU O UTILIZADOR?
+// =========================================================================
+$esta_bloqueado = false;
 $nome_vaso_exibicao = "GreenBuddy";
-$stmt_nome = $conn->prepare("SELECT nome_vaso FROM vasos WHERE id_vaso = ? LIMIT 1");
-if ($stmt_nome) {
-    $stmt_nome->bind_param("i", $id_vaso);
-    $stmt_nome->execute();
-    $res_nome = $stmt_nome->get_result();
-    if ($vaso_row = $res_nome->fetch_assoc()) {
-        if (!empty($vaso_row['nome_vaso'])) {
-            $nome_vaso_exibicao = $vaso_row['nome_vaso'];
-        }
+
+// 1. Verifica o estado do VASO na tabela 'vasos'
+$sql_check_vaso = "SELECT status_vaso, nome_vaso FROM vasos WHERE id_vaso = ? LIMIT 1";
+$stmt_check_vaso = $conn->prepare($sql_check_vaso);
+$stmt_check_vaso->bind_param("i", $id_vaso);
+$stmt_check_vaso->execute();
+$res_vaso = $stmt_check_vaso->get_result();
+
+if ($res_vaso->num_rows === 0) {
+    $esta_bloqueado = true;
+} else {
+    $dados_vaso = $res_vaso->fetch_assoc();
+    if (!empty($dados_vaso['nome_vaso'])) {
+        $nome_vaso_exibicao = $dados_vaso['nome_vaso'];
+    }
+    
+    // SE O STATUS_VASO FOR DIFERENTE DE 'ativo', BLOQUEIA!
+    if (!isset($dados_vaso['status_vaso']) || trim($dados_vaso['status_vaso']) !== 'ativo') {
+        $esta_bloqueado = true;
     }
 }
 
+// 2. Verifica também o estado do UTILIZADOR por segurança
+$sql_check_user = "SELECT status FROM utilizadores WHERE id_utilizador = ? LIMIT 1";
+$stmt_check_user = $conn->prepare($sql_check_user);
+$stmt_check_user->bind_param("i", $user_id);
+$stmt_check_user->execute();
+$res_user = $stmt_check_user->get_result();
+
+if ($res_user->num_rows === 0) {
+    $esta_bloqueado = true;
+} else {
+    $dados_conta = $res_user->fetch_assoc();
+    if (isset($dados_conta['status']) && trim($dados_conta['status']) !== 'ativo') {
+        $esta_bloqueado = true;
+    }
+}
+
+// SE ESTIVER BLOQUEADO (VASO OU USER) E FOR AJAX: Responde 'apagado'
+if ($esta_bloqueado) {
+    if (isset($_GET['ajax']) || isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'apagado']);
+        exit();
+    }
+}
+
+// Resposta para o script de verificação quando está tudo ATIVO
+if (isset($_GET['ajax_check'])) {
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'ativo']);
+    exit();
+}
+// =========================================================================
+
 // --- 1. ATUALIZAÇÃO DA CONFIGURAÇÃO (POST) ---
-// Quando o utilizador altera os valores de 0 para o que quiser e clica em Guardar
 if (isset($_POST['update_config'])) {
     $seco = intval($_POST['seco_limite']);
     $humido = intval($_POST['humido_limite']);
     $id_post = intval($_POST['id_vaso']); 
     
-    // Atualiza APENAS o vaso correspondente usando Prepared Statements
     $stmt = $conn->prepare("UPDATE vaso_config SET seco_limite = ?, humido_limite = ? WHERE id = ?");
     $stmt->bind_param("iii", $seco, $humido, $id_post);
     $stmt->execute();
     
-    // Redireciona mantendo o ID do vaso correto na URL
     header("Location: recebe.php?id=" . $id_post); 
     exit;
 }
@@ -47,7 +95,6 @@ if ($humidade !== null) {
     $stmt->bind_param("ssss", $data, $hora, $humidade, $mac);
     $stmt->execute();
     
-    // Retorna as configurações do vaso atual para o hardware
     $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
     $stmt_config->bind_param("i", $id_vaso);
     $stmt_config->execute();
@@ -62,11 +109,9 @@ if ($humidade !== null) {
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
     
-    // Pega a última leitura de humidade geral
     $res_atual = $conn->query("SELECT percentagem, hora, data FROM vaso_humidade ORDER BY id_humidade DESC LIMIT 1");
     $dados = $res_atual->fetch_assoc();
     
-    // Pega as configurações específicas deste vaso
     $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
     $stmt_config->bind_param("i", $id_vaso);
     $stmt_config->execute();
@@ -74,6 +119,7 @@ if (isset($_GET['ajax'])) {
     $config = $res_config->fetch_assoc();
     
     echo json_encode([
+        "status" => "ativo",
         "percentagem" => $dados['percentagem'] ?? 0,
         "hora" => $dados['hora'] ?? "--:--",
         "seco" => $config['seco_limite'] ?? 0,
@@ -108,9 +154,50 @@ if (isset($_GET['ajax'])) {
         input[type="number"] { width: 100%; background: transparent; border: none; font-size: 1.5rem; font-weight: 700; color: var(--primary); text-align: center; outline: none; }
         .btn-update { background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; border: none; padding: 18px; width: 100%; border-radius: 20px; font-weight: 700; cursor: pointer; transition: 0.3s; }
         .btn-update:hover { transform: translateY(-2px); box-shadow: 0 15px 25px rgba(45,90,39,0.3); }
+
+        /* Estilos do Ecrã de Bloqueio Integral */
+        #bloqueio-remoto {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(14, 26, 13, 0.98);
+            z-index: 999999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+        .alerta-bloqueio {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-radius: 32px;
+            text-align: center;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+        .alerta-bloqueio h2 { color: #d9534f; margin-top: 15px; font-size: 1.6rem; font-weight: 800; }
+        .alerta-bloqueio p { color: #4a5568; font-size: 0.95rem; line-height: 1.6; margin: 15px 0 20px; }
+        .email-contacto { font-weight: 700; color: var(--primary); background: #edf7ed; padding: 6px 12px; border-radius: 8px; display: inline-block; word-break: break-all; margin-top: 5px; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
+
+    <div id="bloqueio-remoto" class="<?php echo $esta_bloqueado ? '' : 'hidden'; ?>">
+        <div class="alerta-bloqueio">
+            <span style="font-size: 4.5rem; display: block; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));">🚫</span>
+            <h2>Vaso Desativado</h2>
+            <p>
+                O seu vaso foi desativado pelo admin, por favor aguarde que ele reative. 
+                Se o admin não o contactar com o motivo em 10 minutos, pode contactá-lo:
+                <br>
+                <span class="email-contacto">greenbuddy.app.26@gmail.com</span>
+            </p>
+        </div>
+    </div>
+
     <div class="header">
         <span class="logo-text"><?php echo htmlspecialchars($nome_vaso_exibicao); ?></span>
         <a href="ativacao.php" class="btn-logout">Voltar aos Vasos</a>
@@ -155,33 +242,76 @@ if (isset($_GET['ajax'])) {
             options: { responsive: true, plugins: { legend: { display: false } } }
         });
 
+        // Controla dinamicamente a visibilidade do ecrã de bloqueio
+        function alternarBloqueioEcran(ativar) {
+            const telaBloqueio = document.getElementById('bloqueio-remoto');
+            if (ativar) {
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        for(let registration of registrations) registration.unregister();
+                    });
+                }
+                telaBloqueio.classList.remove('hidden');
+            } else {
+                // Se voltou a ativo, esconde o ecrã de bloqueio automaticamente!
+                telaBloqueio.classList.add('hidden');
+            }
+        }
+
         function atualizar() {
-            // Descobre o ID do vaso atual a partir da URL do browser
             const urlParams = new URLSearchParams(window.location.search);
             const idVaso = urlParams.get('id') || 1;
 
-            // Faz o pedido AJAX enviando o ID correto
             fetch('recebe.php?ajax=1&id=' + idVaso)
                 .then(r => r.json())
                 .then(data => {
-                    const v = parseInt(data.percentagem);
-                    gaugeChart.data.datasets[0].data = [v, 100 - v];
-                    gaugeChart.update();
-                    
-                    document.getElementById('humidade-valor').innerText = v + "%";
-                    document.getElementById('hora-atualizacao').innerText = "Leitura: " + data.hora;
-                    
-                    // Só atualiza os inputs se o utilizador não estiver a escrever neles
-                    if(document.activeElement.tagName !== "INPUT") {
-                        document.getElementById('input-seco').value = data.seco;
-                        document.getElementById('input-humido').value = data.humido;
+                    if (data && data.status === 'apagado') {
+                        alternarBloqueioEcran(true);
+                        return;
                     }
-                });
+
+                    // Se a resposta AJAX vier normal (ativa), garante que a tela saia
+                    alternarBloqueioEcran(false);
+
+                    if (data && data.percentagem !== undefined) {
+                        const v = parseInt(data.percentagem);
+                        gaugeChart.data.datasets[0].data = [v, 100 - v];
+                        gaugeChart.update();
+                        
+                        document.getElementById('humidade-valor').innerText = v + "%";
+                        document.getElementById('hora-atualizacao').innerText = "Leitura: " + data.hora;
+                        
+                        if(document.activeElement.tagName !== "INPUT") {
+                            document.getElementById('input-seco').value = data.seco;
+                            document.getElementById('input-humido').value = data.humido;
+                        }
+                    }
+                })
+                .catch(err => console.log('A aguardar dados válidos...'));
         }
 
-        // Corre a atualização a cada 5 segundos
-        setInterval(atualizar, 5000); 
+        setInterval(atualizar, 3000); 
         atualizar();
+
+        function monitorarConta() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const idVaso = urlParams.get('id') || 1;
+            
+            fetch('recebe.php?id=' + idVaso + '&ajax_check=1', {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.status === 'apagado') {
+                    alternarBloqueioEcran(true);
+                } else {
+                    alternarBloqueioEcran(false);
+                }
+            })
+            .catch(err => console.log('A verificar conta...'));
+        }
+        setInterval(monitorarConta, 2000); 
+        monitorarConta();
     </script>
 </body>
 </html>

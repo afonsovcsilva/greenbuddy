@@ -2,6 +2,11 @@
 require "db.php";
 session_start();
 
+// IMPORTAÇÃO DO PHPMAILER PARA O ENVIO DE EMAIL
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+require 'vendor/autoload.php';
+
 // PROTEÇÃO: Se não estiver logado ou não for admin, corre com ele daqui
 if (!isset($_SESSION['user_id']) || $_SESSION['is_admin'] != 1) {
     header("Location: login.php");
@@ -17,12 +22,24 @@ if (isset($_GET['acao'])) {
     if ($acao === 'bloquear_todos') {
         $stmt = $conn->prepare("UPDATE utilizadores SET status = 'bloqueado' WHERE is_admin != 1");
         $stmt->execute();
+        
+        if (isset($_GET['ajax_action'])) {
+            header('Content-Type: application/json');
+            echo json_encode(["status" => "success"]);
+            exit();
+        }
     }
     elseif ($acao === 'desbloquear_todos') {
         $stmt = $conn->prepare("UPDATE utilizadores SET status = 'ativo' WHERE is_admin != 1");
         $stmt->execute();
+        
+        if (isset($_GET['ajax_action'])) {
+            header('Content-Type: application/json');
+            echo json_encode(["status" => "success"]);
+            exit();
+        }
     }
-    // 2. Ações de Utilizador Individual (Ligadas por ELSEIF)
+    // 2. Ações de Utilizador Individual
     elseif ($id_alvo > 0 && $id_alvo != $_SESSION['user_id'] && ($acao === 'bloquear' || $acao === 'desbloquear' || $acao === 'remover')) {
         if ($acao === 'bloquear') {
             $stmt = $conn->prepare("UPDATE utilizadores SET status = 'bloqueado' WHERE id_utilizador = ?");
@@ -35,6 +52,50 @@ if (isset($_GET['acao'])) {
             $stmt->execute();
         } 
         elseif ($acao === 'remover') {
+            // ---- LOGICA DE ENVIO DE EMAIL ANTES DE REMOVER ----
+            $stmt_email = $conn->prepare("SELECT email FROM utilizadores WHERE id_utilizador = ?");
+            $stmt_email->bind_param("i", $id_alvo);
+            $stmt_email->execute();
+            $res_email = $stmt_email->get_result();
+
+            if ($res_email->num_rows > 0) {
+                $user_data = $res_email->fetch_assoc();
+                $email_destino = $user_data['email'];
+
+                $mail = new PHPMailer(true);
+                try {
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'greenbuddy.app.26@gmail.com';
+                    $mail->Password   = 'SUA_PALAVRA_PASSE_DE_APLICACAO'; // <--- Chave Google aqui
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+                    $mail->CharSet    = 'UTF-8';
+
+                    $mail->setFrom('greenbuddy.app.26@gmail.com', 'GreenBuddy App');
+                    $mail->addAddress($email_destino);
+
+                    $mail->isHTML(true);
+                    $mail->Subject = 'Aviso Importante de Segurança - GreenBuddy';
+                    $mail->Body    = "
+                        <div style='font-family: sans-serif; padding: 20px; color: #333;'>
+                            <h2 style='color: #cc4444;'>Conta Eliminada</h2>
+                            <p>Olá,</p>
+                            <p>Lamentamos informar, mas a sua conta foi apagada do nosso sistema pois violava os nossos termos de segurança e privacidade.</p>
+                            <br>
+                            <p>Atentamente,<br><b>Equipa GreenBuddy</b></p>
+                        </div>
+                    ";
+                    $mail->AltBody = 'A sua conta foi apagada pois violava os nossos termos de segurança e privacidade.';
+
+                    $mail->send();
+                } catch (Exception $e) {
+                    // Ignora silenciosamente para não travar a eliminação
+                }
+            }
+            // ----------------------------------------------------
+
             $stmt1 = $conn->prepare("DELETE FROM vasos WHERE id_utilizador = ?");
             $stmt1->bind_param("i", $id_alvo);
             $stmt1->execute();
@@ -43,8 +104,15 @@ if (isset($_GET['acao'])) {
             $stmt2->bind_param("i", $id_alvo);
             $stmt2->execute();
         }
+
+        // RESPOSTA AJAX PARA UTILIZADORES
+        if (isset($_GET['ajax_action'])) {
+            header('Content-Type: application/json');
+            echo json_encode(["status" => "success"]);
+            exit();
+        }
     }
-    // 3. Ações de Vaso Individual (Isoladas estritamente pelo tipo de ação)
+    // 3. Ações de Vaso Individual
     elseif ($id_alvo > 0 && ($acao === 'desativar_vaso' || $acao === 'ativar_vaso')) {
         if ($acao === 'desativar_vaso') {
             $stmt = $conn->prepare("UPDATE vasos SET status_vaso = 'desativado' WHERE id_vaso = ?");
@@ -56,13 +124,16 @@ if (isset($_GET['acao'])) {
             $stmt->bind_param("i", $id_alvo);
             $stmt->execute();
         }
+
+        // RESPOSTA AJAX PARA VASOS
+        if (isset($_GET['ajax_action'])) {
+            header('Content-Type: application/json');
+            echo json_encode(["status" => "success"]);
+            exit();
+        }
     }
 
-    if (isset($_GET['ajax_action'])) {
-        echo "success";
-        exit();
-    }
-
+    // Redirecionamento de segurança caso alguém tente aceder diretamente pelo URL sem AJAX
     header("Location: admin.php");
     exit();
 }
@@ -150,14 +221,14 @@ function renderizarTabelaUtilizadores($conn, $pesquisa = '') {
     return $html;
 }
 
-// Verifica se existem utilizadores comuns ativos (retorna 'bloquear' ou 'desbloquear')
+// Verifica se existem utilizadores comuns ativos
 function obterEstadoBotaoMassa($conn) {
     $res = $conn->query("SELECT COUNT(*) as ativos FROM utilizadores WHERE is_admin != 1 AND status = 'ativo'");
     $row = $res->fetch_assoc();
     return ($row['ativos'] > 0) ? 'bloquear' : 'desbloquear';
 }
 
-// Resposta estrita do AJAX
+// Resposta estrita do AJAX para atualização da tabela
 if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
     $pesquisa = isset($_GET['q']) ? trim($_GET['q']) : '';
     
@@ -169,17 +240,11 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
     exit();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1a3317">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="manifest.json">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GreenBuddy - Consola Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -191,53 +256,33 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
         h1 { color: var(--primary); margin: 0; font-weight: 700; font-size: 1.6rem; }
         .btn-logout { text-decoration: none; color: white; background: var(--primary); padding: 10px 20px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; }
         .card { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); overflow-x: auto; }
-        
         .card-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         h2 { font-size: 1.1rem; color: #555; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
-        
         .controls-wrapper { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; max-width: 650px; justify-content: flex-end; }
         .search-container { position: relative; flex: 1; min-width: 250px; }
         .search-input { width: 100%; padding: 10px 15px; border: 2px solid #e0e6e0; border-radius: 12px; font-size: 0.9rem; outline: none; transition: 0.2s; }
         .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1); }
-        
-        .btn-bulk-toggle { color: white; border: none; padding: 11px 20px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.1s; white-space: nowrap; }
+        .btn-bulk-toggle { color: white; border: none; padding: 11px 20px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
         .btn-bulk-toggle.state-block { background: var(--danger); }
-        .btn-bulk-toggle.state-block:hover { background: #c9302c; }
         .btn-bulk-toggle.state-unblock { background: var(--accent); }
-        .btn-bulk-toggle.state-unblock:hover { background: #3d8b40; }
-        
         table { width: 100%; border-collapse: collapse; text-align: left; min-width: 800px; }
         th { background: #edf2ed; padding: 15px; color: var(--primary); font-weight: 600; font-size: 0.85rem; }
         td { padding: 15px; border-bottom: 1px solid #eee; font-size: 0.85rem; vertical-align: middle; }
-        tr:hover { background: #fafdfa; }
         .badge { padding: 5px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; }
         .badge-active { background: #e8f5e9; color: #2e7d32; }
         .badge-blocked { background: #ffebee; color: #c62828; }
         .badge-admin { background: #e3f2fd; color: #1565c0; }
-        
         .vasos-list { width: 320px; }
-        .btn-toggle-vasos { background: #edf2ed; border: 1px solid #d4ded4; color: var(--primary); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s; width: 100%; justify-content: space-between; }
-        .btn-toggle-vasos:hover { background: #e0eae0; }
+        .btn-toggle-vasos { background: #edf2ed; border: 1px solid #d4ded4; color: var(--primary); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; width: 100%; justify-content: space-between; }
         .seta { font-size: 0.65rem; transition: transform 0.3s ease; display: inline-block; }
         .seta.rodada { transform: rotate(180deg); }
         .vasos-collapse-container { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
         .vasos-collapse-container.aberto { max-height: 300px; overflow-y: auto; }
-
         .actions { display: flex; flex-direction: column; gap: 5px; min-width: 130px; }
         .btn-action { border: none; font-size: 0.75rem; font-weight: 600; padding: 8px 12px; border-radius: 8px; color: white; transition: 0.2s; cursor: pointer; text-align: center; }
         .btn-block { background: var(--warning); }
         .btn-unblock { background: var(--accent); }
         .btn-remove { background: var(--danger); }
-        
-        @media (max-width: 768px) {
-            body { padding: 10px; }
-            .header { flex-direction: column; align-items: flex-start; }
-            .btn-logout { width: 100%; text-align: center; }
-            .card-header-actions { flex-direction: column; align-items: flex-start; }
-            .controls-wrapper { width: 100%; max-width: 100%; }
-            .search-container { width: 100%; }
-            .btn-bulk-toggle { width: 100%; text-align: center; }
-        }
     </style>
 </head>
 <body>
@@ -254,7 +299,6 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
     <div class="card">
         <div class="card-header-actions">
             <h2>Contas e Dispositivos Registados</h2>
-            
             <div class="controls-wrapper">
                 <div class="search-container">
                     <input type="text" id="input-pesquisa" class="search-input" placeholder="Pesquisar por nome ou email..." oninput="verificarAtualizacoes()">
@@ -283,21 +327,12 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
 </div>
 
 <script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js')
-                .then(reg => console.log('Service Worker da Admin ativo (sw.js)!', reg))
-                .catch(err => console.log('Erro ao registar Service Worker:', err));
-        });
-    }
-
     let estadoAtualGlobal = '<?php echo obterEstadoBotaoMassa($conn); ?>';
     let menusAbertos = {};
 
     function toggleVasos(userId) {
         const container = document.getElementById(`lista-vasos-${userId}`);
         const seta = document.getElementById(`seta-${userId}`);
-        
         if (container.classList.contains('aberto')) {
             container.classList.remove('aberto');
             seta.classList.remove('rodada');
@@ -315,7 +350,6 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
             .then(response => response.json())
             .then(data => {
                 document.getElementById('tabela-corpo').innerHTML = data.html;
-                
                 Object.keys(menusAbertos).forEach(userId => {
                     if (menusAbertos[userId]) {
                         const container = document.getElementById(`lista-vasos-${userId}`);
@@ -329,7 +363,6 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
 
                 const btnMassa = document.getElementById('btn-massa');
                 estadoAtualGlobal = data.estado_botao;
-
                 if (estadoAtualGlobal === 'bloquear') {
                     btnMassa.className = "btn-bulk-toggle state-block";
                     btnMassa.innerHTML = "⚠️ Bloquear Todas as Contas";
@@ -343,49 +376,35 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
 
     setInterval(verificarAtualizacoes, 4000);
 
-    // FUNÇÃO CORRIGIDA: Agora força a atualização imediata assim que o servidor responde
     function executarAcao(acao, id) {
         fetch(`admin.php?acao=${acao}&id=${id}&ajax_action=1`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Erro na resposta do servidor');
-                }
-                return response.text();
-            })
+            .then(response => response.json())
             .then(data => {
-                // Força a atualização da tabela no exato momento em que a ação correu bem
                 verificarAtualizacoes();
             })
             .catch(err => {
                 console.error('Erro ao executar a ação:', err);
-                // Fallback seguro em caso de falha de rede: recarrega a página de forma nativa
                 window.location.reload();
             });
     }
 
     function alternarTodosUtilizadores() {
         if (estadoAtualGlobal === 'bloquear') {
-            if (confirm('ATENÇÃO: Tens a certeza que desejas BLOQUEAR TODOS os utilizadores do sistema?')) {
-                fetch('admin.php?acao=bloquear_todos&ajax_action=1')
-                    .then(() => verificarAtualizacoes());
+            if (confirm('ATENÇÃO: Tens a certeza que desejas BLOQUEAR TODOS os utilizadores?')) {
+                fetch('admin.php?acao=bloquear_todos&ajax_action=1').then(() => verificarAtualizacoes());
             }
         } else {
-            if (confirm('Desejas DESBLOQUEAR TODOS os utilizadores do sistema para restaurar o acesso?')) {
-                fetch('admin.php?acao=desbloquear_todos&ajax_action=1')
-                    .then(() => verificarAtualizacoes());
+            if (confirm('Desejas DESBLOQUEAR TODOS os utilizadores?')) {
+                fetch('admin.php?acao=desbloquear_todos&ajax_action=1').then(() => verificarAtualizacoes());
             }
         }
     }
 
     function removerUtilizador(id) {
         if (confirm('Tens a certeza que queres eliminar permanentemente este utilizador e todos os seus vasos?')) {
-            fetch(`admin.php?acao=remover&id=${id}&ajax_action=1`)
-                .then(() => {
-                    verificarAtualizacoes();
-                });
+            fetch(`admin.php?acao=remover&id=${id}&ajax_action=1`).then(() => verificarAtualizacoes());
         }
     }
 </script>
-
 </body>
 </html>

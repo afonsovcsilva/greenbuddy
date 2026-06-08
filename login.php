@@ -151,6 +151,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="alert alert-<?php echo $tipo; ?>">
                 <?php echo $parts[1]; ?>
             </div>
+
+            <?php if ($tipo === 'success'): ?>
+                <a href="login.php" class="toggle-link" style="margin-bottom: 15px;">Ir para o Login</a>
+            <?php endif; ?>
         <?php endif; ?>
         
         <div id="login-section" <?php if(isset($_POST['btn_registo'])) echo 'class="hidden"'; ?>>
@@ -167,6 +171,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
                 <button type="submit" name="btn_login" class="btn-auth">Entrar</button>
             </form>
+            
+            <a href="recuperar.php" class="toggle-link">Esqueci-me da palavra-pass</a>
+            
             <a class="toggle-link" onclick="mostrarRegisto()">Criar nova conta</a>
         </div>
 

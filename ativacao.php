@@ -15,7 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 
 // =========================================================================
-// BLOCO DE DIAGNÓSTICO E VERIFICAÇÃO EM TEMPO REAL
+// BLOCO DE DIAGNÓSTICO E VERIFICAÇÃO EM TEMPO REAL (OTIMIZADO)
 // =========================================================================
 $sql_check_deleted = "SELECT * FROM utilizadores WHERE id_utilizador = ?";
 $stmt_check_deleted = $conn->prepare($sql_check_deleted);
@@ -23,48 +23,42 @@ $stmt_check_deleted->bind_param("i", $user_id);
 $stmt_check_deleted->execute();
 $res_check_deleted = $stmt_check_deleted->get_result();
 
+$esta_bloqueado = false;
+
 if ($res_check_deleted->num_rows === 0) {
     // A conta REALMENTE não existe na BD (foi apagada)
-    if (isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'apagado']);
-        exit();
-    }
-    session_destroy();
-    header("Location: login.php?erro=conta_eliminada"); 
-    exit(); 
+    $esta_bloqueado = true;
 } else {
     // A conta EXISTE. Vamos ler os dados dela para verificar possíveis colunas de bloqueio
     $dados_conta = $res_check_deleted->fetch_assoc();
     
-    $esta_bloqueado = false;
-    if (isset($dados_conta['status']) && $dados_conta['status'] == 0) $esta_bloqueado = true;
+    if (isset($dados_conta['status']) && ($dados_conta['status'] == 0 || trim($dados_conta['status']) !== 'ativo' && !is_numeric($dados_conta['status']))) $esta_bloqueado = true;
     if (isset($dados_conta['bloqueado']) && $dados_conta['bloqueado'] == 1) $esta_bloqueado = true;
     if (isset($dados_conta['ativo']) && $dados_conta['ativo'] == 0) $esta_bloqueado = true;
-
-    if ($esta_bloqueado) {
-        if (isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'apagado']);
-            exit();
-        }
-        session_destroy();
-        header("Location: login.php?erro=conta_eliminada"); 
-        exit();
-    }
 }
 
-// Resposta padrão para o JavaScript se a conta estiver ativa
-if (isset($_GET['ajax_check'])) {
+// Resposta AJAX imediata (evita carregar o resto do script e poupa largura de banda)
+if (isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
     header('Content-Type: application/json');
-    echo json_encode([
-        'status' => 'ativo',
-        'debug_info' => [
-            'id' => $dados_conta['id_utilizador'],
-            'username' => $dados_conta['username']
-        ]
-    ]);
+    if ($esta_bloqueado) {
+        echo json_encode(['status' => 'apagado']);
+    } else {
+        echo json_encode([
+            'status' => 'ativo',
+            'debug_info' => [
+                'id' => $dados_conta['id_utilizador'],
+                'username' => $dados_conta['username']
+            ]
+        ]);
+    }
     exit();
+}
+
+// Se o utilizador aceder à página já bloqueado via HTTP normal:
+if ($esta_bloqueado) {
+    session_destroy();
+    header("Location: login.php?erro=conta_eliminada"); 
+    exit(); 
 }
 // =========================================================================
 
@@ -78,9 +72,11 @@ if (isset($_POST['btn_atualizar_perfil'])) {
     $novo_user = trim($_POST['username']);
     $novo_email = trim($_POST['email']);
     $novo_tel = trim($_POST['telemovel']);
+    $senha_antiga = $_POST['senha_antiga'];
     $nova_pass = $_POST['password'];
 
-    $sql_atual = "SELECT username, email FROM utilizadores WHERE id_utilizador = ?";
+    // Buscar a senha atual encriptada e os dados únicos para validação
+    $sql_atual = "SELECT username, email, senha FROM utilizadores WHERE id_utilizador = ?";
     $stmt_atual = $conn->prepare($sql_atual);
     $stmt_atual->bind_param("i", $user_id);
     $stmt_atual->execute();
@@ -88,7 +84,18 @@ if (isset($_POST['btn_atualizar_perfil'])) {
 
     $conflito = false;
 
-    if ($novo_user !== $dados_atuais['username']) {
+    // Verificar se quer alterar a palavra-pass e validar a antiga primeiro
+    if (!empty($nova_pass)) {
+        if (empty($senha_antiga) || !password_verify($senha_antiga, $dados_atuais['senha'])) {
+            $mensagem_perfil = "A palavra-pass antiga está incorreta. Não foi possível aplicar as alterações.";
+            $conflito = true;
+        } else if (strlen($nova_pass) < 6) {
+            $mensagem_perfil = "A nova palavra-pass deve ter pelo menos 6 caracteres.";
+            $conflito = true;
+        }
+    }
+
+    if (!$conflito && $novo_user !== $dados_atuais['username']) {
         $sql_check_user = "SELECT id_utilizador FROM utilizadores WHERE username = ?";
         $stmt_check_user = $conn->prepare($sql_check_user);
         $stmt_check_user->bind_param("s", $novo_user);
@@ -117,11 +124,12 @@ if (isset($_POST['btn_atualizar_perfil'])) {
         
         if ($stmt_update->execute()) {
             $sucesso_perfil = true;
-            $mensagem_perfil = "Dados atualizados com sucesso!";
+            $mensagem_perfil = "Dados updated com sucesso!";
             
+            // Se passou as validações e a nova pass foi digitada, atualiza-a na coluna correta ('senha')
             if (!empty($nova_pass)) {
                 $pass_encriptada = password_hash($nova_pass, PASSWORD_DEFAULT);
-                $sql_pass = "UPDATE utilizadores SET password = ? WHERE id_utilizador = ?";
+                $sql_pass = "UPDATE utilizadores SET senha = ? WHERE id_utilizador = ?";
                 $stmt_pass = $conn->prepare($sql_pass);
                 $stmt_pass->bind_param("si", $pass_encriptada, $user_id);
                 $stmt_pass->execute();
@@ -170,18 +178,14 @@ if (isset($_POST['btn_ativar'])) {
             $stmt->bind_param("iss", $user_id, $mac_formatado, $nome_padrao);
             
             if ($stmt->execute()) {
-                // --- INÍCIO DA ALTERAÇÃO PEDIDA ---
-                // Obtém o ID do vaso que o MySQL acabou de gerar automaticamente
                 $novo_id_vaso = $conn->insert_id;
                 $seco_inicial = 0;
                 $humido_inicial = 0;
 
-                // Insere automaticamente a configuração inicial com 0 para esse novo ID
                 $sql_config = "INSERT INTO vaso_config (id, seco_limite, humido_limite) VALUES (?, ?, ?)";
                 $stmt_config = $conn->prepare($sql_config);
                 $stmt_config->bind_param("iii", $novo_id_vaso, $seco_inicial, $humido_inicial);
                 $stmt_config->execute();
-                // --- FIM DA ALTERAÇÃO PEDIDA ---
 
                 header("Location: ativacao.php");
                 exit();
@@ -552,52 +556,46 @@ $tem_vasos = (count($lista_vasos) > 0);
             border: 1px solid #c8e6c9;
         }
 
-        #bloqueio-remoto {
+        /* MECÂNICA EXCLUSIVA DE BLOQUEIO DE CONTA POR SEGURANÇA */
+        #bloqueio-conta {
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0, 0, 0, 0.95);
-            z-index: 99999;
+            background: rgba(18, 9, 9, 0.98);
+            z-index: 999999;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 24px;
             box-sizing: border-box;
         }
-        .alerta-bloqueio {
-            background: white;
-            padding: 40px;
-            border-radius: 30px;
+        .alerta-bloqueio-conta {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-radius: 32px;
             text-align: center;
-            max-width: 400px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            max-width: 440px;
+            width: 100%;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+            border: 1px solid rgba(0,0,0,0.05);
         }
-        .alerta-bloqueio h2 { color: #d9534f; margin-top: 0; font-size: 1.8rem; }
-        .alerta-bloqueio p { color: #555; font-size: 0.95rem; line-height: 1.6; }
-        .btn-logout-bloqueio {
-            display: inline-block;
-            background: #d9534f;
-            color: white;
-            text-decoration: none;
-            padding: 12px 30px;
-            border-radius: 50px;
-            font-weight: 700;
-            margin-top: 20px;
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            transition: 0.2s;
-        }
-        .btn-logout-bloqueio:hover { background: #c9302c; transform: scale(1.05); }
+        .alerta-bloqueio-conta h2 { color: #cc4444; margin-top: 15px; font-size: 1.6rem; font-weight: 800; }
+        .alerta-bloqueio-conta p { color: #4a5568; font-size: 0.95rem; line-height: 1.6; margin: 15px 0 20px; }
+        .email-contacto-seg { font-weight: 700; color: #cc4444; background: #fff5f5; padding: 6px 12px; border-radius: 8px; display: inline-block; word-break: break-all; margin-top: 5px; }
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="bloqueio-remoto" class="hidden">
-        <div class="alerta-bloqueio">
-            <span style="font-size: 4rem;">🚫</span>
-            <h2>Conta Bloqueada</h2>
-            <p>A sua conta foi temporariamente suspensa pela administração do sistema. Para mais informações ou suporte, contacte o administrador.</p>
-            <a href="logout.php" class="btn-logout-bloqueio">Terminar Sessão</a>
+    <div id="bloqueio-conta" class="hidden">
+        <div class="alerta-bloqueio-conta">
+            <span style="font-size: 4.5rem; display: block; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));">🛡️</span>
+            <h2>Sessão Terminada</h2>
+            <p>
+                Sessão terminada pelo admin, por motivos de violação dos nossos termos de segurança. 
+                Se acha que foi um erro do admin contacte:
+                <br>
+                <span class="email-contacto-seg">greenbuddy.app.26@gmail.com</span>
+            </p>
         </div>
     </div>
 
@@ -671,9 +669,16 @@ $tem_vasos = (count($lista_vasos) > 0);
                         <input type="tel" id="telemovel" name="telemovel" value="<?php echo htmlspecialchars($dados_user['telemovel']); ?>">
                     </div>
 
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
                     <div class="form-group">
-                        <label for="password">Nova Palavra-passe (Deixar em branco para manter a atual)</label>
-                        <input type="password" id="password" name="password" placeholder="••••••••">
+                        <label for="senha_antiga" style="color: #c62828;">Palavra-passe Atual</label>
+                        <input type="password" id="senha_antiga" name="senha_antiga" placeholder="Obrigatório apenas se quiser mudar a senha">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Nova Palavra-passe</label>
+                        <input type="password" id="password" name="password" placeholder="Mínimo 6 caracteres">
                     </div>
 
                     <button type="submit" name="btn_atualizar_perfil" class="btn-add" style="width: 100%; padding: 12px; border-radius: 50px; margin-top: 10px;">Guardar Alterações</button>
@@ -736,20 +741,34 @@ $tem_vasos = (count($lista_vasos) > 0);
             });
         }
 
-        // Loop de monitorização em segundo plano (Corrigido e funcional)
+        // TÉCNICA RECURSIVA SUPER LEVE: Monitoriza a conta sem sobreposições
         function monitorarConta() {
             fetch('ativacao.php?ajax_check=1', {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
             .then(response => response.json())
             .then(data => {
+                const telaBloqueio = document.getElementById('bloqueio-conta');
                 if (data && data.status === 'apagado') {
-                    document.getElementById('bloqueio-remoto').classList.remove('hidden');
+                    // Limpa Service Workers se existirem para evitar lixo em cache
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                            for(let registration of registrations) registration.unregister();
+                        });
+                    }
+                    telaBloqueio.classList.remove('hidden');
+                } else {
+                    telaBloqueio.classList.add('hidden');
                 }
             })
-            .catch(err => console.log('A monitorizar conta...'));
+            .catch(err => console.log('A monitorizar segurança da conta...'))
+            .finally(() => {
+                // Só agenda o próximo pedido 3 segundos depois de o atual ter terminado!
+                setTimeout(monitorarConta, 3000);
+            });
         }
-        setInterval(monitorarConta, 3000);
+        
+        // Inicia o ciclo de monitorização assim que o script carrega
         monitorarConta();
 
         function switchTab(tab) {
@@ -771,7 +790,6 @@ $tem_vasos = (count($lista_vasos) > 0);
             }
         }
 
-        // Se houver uma mensagem de perfil vinda do PHP, força a aba de Perfil a abrir
         <?php if (!empty($mensagem_perfil)): ?>
             switchTab('perfil');
         <?php endif; ?>
@@ -781,7 +799,6 @@ $tem_vasos = (count($lista_vasos) > 0);
             fecharTodosDropdowns();
         }
 
-        // CORREÇÃO AQUI: .style.display em vez de .style.none
         function closeModal(id) {
             document.getElementById(id).style.display = 'none';
         }
