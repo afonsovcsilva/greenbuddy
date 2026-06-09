@@ -8,7 +8,7 @@ $mensagem = "";
 // NOVO: CAPTURA O ERRO DE CONTA ELIMINADA VINDO DO REDIRECIONAMENTO
 // =========================================================================
 if (isset($_GET['erro']) && $_GET['erro'] === 'conta_eliminada') {
-    $mensagem = "error|A sua conta foi eliminada pelo admin, por violar os nosso termos de segurança. Se acha que foi um engano contacte o suporte: 938490159.";
+    $mensagem = "error|A sua conta foi eliminada pelo admin, por violar os nosso termos de segurança. Se acha que foi um engano contacte o suporte: greenbuddy.app.26@gmail.com.";
 }
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {

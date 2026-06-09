@@ -1,7 +1,58 @@
 <?php
 require "db.php"; 
-session_start(); 
 date_default_timezone_set('Europe/Lisbon');
+
+// =========================================================================
+// --- 1. RECEBER DADOS DO SENSOR/HARDWARE (GET) ---
+// Colocado no topo para o hardware não ser bloqueado pela sessão/login
+// =========================================================================
+$humidade = $_GET['humidade'] ?? null;
+$mac = $_GET['mac'] ?? null;
+$agua = $_GET['agua'] ?? null; // Captura o nível do reservatório enviado pelo Arduino
+
+if ($humidade !== null) {
+    $data = date("Y-m-d"); 
+    $hora = date("H:i:s");
+    
+    // 1. Guarda a humidade e o nível de água na base de dados (Adicionada a coluna nivel_agua)
+    $stmt = $conn->prepare("INSERT INTO vaso_humidade (data, hora, percentagem, mac_address, nivel_agua) VALUES (?, ?, ?, ?, ?)");
+    $stmt->bind_param("sssss", $data, $hora, $humidade, $mac, $agua);
+    $stmt->execute();
+    
+    // 2. Tenta descobrir o ID do vaso através do endereço MAC do hardware
+    $id_vaso_sensor = 1;
+    if ($mac !== null) {
+        $sql_mac = "SELECT id_vaso FROM vasos WHERE mac_address = ? LIMIT 1"; 
+        $stmt_mac = $conn->prepare($sql_mac);
+        if ($stmt_mac) {
+            $stmt_mac->bind_param("s", $mac);
+            $stmt_mac->execute();
+            $res_mac = $stmt_mac->get_result();
+            if ($res_mac->num_rows > 0) {
+                $dados_mac = $res_mac->fetch_assoc();
+                $id_vaso_sensor = $dados_mac['id_vaso'];
+            }
+        }
+    } else if (isset($_GET['id'])) {
+        $id_vaso_sensor = intval($_GET['id']);
+    }
+
+    // 3. Procura as configurações para responder ao hardware
+    $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
+    $stmt_config->bind_param("i", $id_vaso_sensor);
+    $stmt_config->execute();
+    $res_config = $stmt_config->get_result();
+    $config = $res_config->fetch_assoc();
+    
+    // Resposta direta para o hardware
+    echo "CONF_SECO:" . ($config['seco_limite'] ?? 0) . "|CONF_HUMIDO:" . ($config['humido_limite'] ?? 0);
+    exit; // Termina aqui a execução para o hardware não receber o HTML
+}
+
+// =========================================================================
+// --- 2. CONTROLO DE SESSÃO DO UTILIZADOR (APENAS PARA O NAVEGADOR) ---
+// =========================================================================
+session_start(); 
 
 if (!isset($_SESSION['user_id'])) { 
     header("Location: login.php"); 
@@ -71,7 +122,7 @@ if (isset($_GET['ajax_check'])) {
 }
 // =========================================================================
 
-// --- 1. ATUALIZAÇÃO DA CONFIGURAÇÃO (POST) ---
+// --- 3. ATUALIZAÇÃO DA CONFIGURAÇÃO (POST) ---
 if (isset($_POST['update_config'])) {
     $seco = intval($_POST['seco_limite']);
     $humido = intval($_POST['humido_limite']);
@@ -85,31 +136,12 @@ if (isset($_POST['update_config'])) {
     exit;
 }
 
-// --- 2. RECEBER DADOS DO SENSOR/HARDWARE (GET) ---
-$humidade = $_GET['humidade'] ?? null;
-$mac = $_GET['mac'] ?? null;
-
-if ($humidade !== null) {
-    $data = date("Y-m-d"); $hora = date("H:i:s");
-    $stmt = $conn->prepare("INSERT INTO vaso_humidade (data, hora, percentagem, mac_address) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("ssss", $data, $hora, $humidade, $mac);
-    $stmt->execute();
-    
-    $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
-    $stmt_config->bind_param("i", $id_vaso);
-    $stmt_config->execute();
-    $res_config = $stmt_config->get_result();
-    $config = $res_config->fetch_assoc();
-    
-    echo "CONF_SECO:" . ($config['seco_limite'] ?? 0) . "|CONF_HUMIDO:" . ($config['humido_limite'] ?? 0);
-    exit;
-}
-
-// --- 3. RESPOSTA PARA O GRÁFICO/PAINEL (AJAX) ---
+// --- 4. RESPOSTA PARA O GRÁFICO/PAINEL (AJAX) ---
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
     
-    $res_atual = $conn->query("SELECT percentagem, hora, data FROM vaso_humidade ORDER BY id_humidade DESC LIMIT 1");
+    // Puxa também a coluna nivel_agua da base de dados
+    $res_atual = $conn->query("SELECT percentagem, nivel_agua, hora, data FROM vaso_humidade ORDER BY id_humidade DESC LIMIT 1");
     $dados = $res_atual->fetch_assoc();
     
     $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
@@ -121,6 +153,7 @@ if (isset($_GET['ajax'])) {
     echo json_encode([
         "status" => "ativo",
         "percentagem" => $dados['percentagem'] ?? 0,
+        "nivel_agua" => $dados['nivel_agua'] ?? 0, // Enviando o nível da água para o JavaScript
         "hora" => $dados['hora'] ?? "--:--",
         "seco" => $config['seco_limite'] ?? 0,
         "humido" => $config['humido_limite'] ?? 0
@@ -138,7 +171,7 @@ if (isset($_GET['ajax'])) {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #2d5a27; --accent: #4caf50; --bg: #f0f7f0; --text: #1a3317; }
+        :root { --primary: #2d5a27; --accent: #4caf50; --bg: #f0f7f0; --text: #1a3317; --water: #2196F3; }
         * { box-sizing: border-box; font-family: 'Poppins', sans-serif; }
         body { background: radial-gradient(circle at top right, #e8f5e9, var(--bg)); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; color: var(--text); }
         .header { width: 100%; max-width: 450px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
@@ -147,6 +180,7 @@ if (isset($_GET['ajax'])) {
         .card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); padding: 30px; border-radius: 35px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.06); margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.5); text-align: center; }
         .gauge-container { position: relative; width: 85%; margin: 0 auto 10px; }
         .value-display { position: absolute; top: 65%; left: 50%; transform: translate(-50%, -50%); font-size: 3rem; font-weight: 800; color: var(--primary); }
+        .value-display.water-text { color: var(--water); }
         .update-tag { font-size: 0.75rem; background: #e1ede0; color: var(--primary); padding: 5px 12px; border-radius: 20px; display: inline-block; margin-top: 5px; }
         .config-group { display: flex; gap: 15px; margin-bottom: 25px; }
         .config-item { flex: 1; background: #f9fbf9; padding: 15px; border-radius: 20px; border: 1px solid #eee; }
@@ -213,6 +247,14 @@ if (isset($_GET['ajax'])) {
     </div>
 
     <div class="card">
+        <h3>Nível do Reservatório</h3>
+        <div class="gauge-container">
+            <canvas id="waterChart"></canvas>
+            <div class="value-display water-text" id="agua-valor">--%</div>
+        </div>
+    </div>
+
+    <div class="card">
         <h3>Configuração de Rega</h3>
         <form method="POST">
             <input type="hidden" name="id_vaso" value="<?php echo $id_vaso; ?>">
@@ -232,6 +274,7 @@ if (isset($_GET['ajax'])) {
     </div>
 
     <script>
+        // Configuração do Gráfico do Solo (Verde)
         const ctx = document.getElementById('gaugeChart').getContext('2d');
         const gradient = ctx.createLinearGradient(0, 0, 0, 200);
         gradient.addColorStop(0, '#4caf50'); gradient.addColorStop(1, '#2d5a27');
@@ -242,7 +285,17 @@ if (isset($_GET['ajax'])) {
             options: { responsive: true, plugins: { legend: { display: false } } }
         });
 
-        // Controla dinamicamente a visibilidade do ecrã de bloqueio
+        // Configuração do Novo Gráfico da Água (Azul)
+        const ctxWater = document.getElementById('waterChart').getContext('2d');
+        const gradientWater = ctxWater.createLinearGradient(0, 0, 0, 200);
+        gradientWater.addColorStop(0, '#2196F3'); gradientWater.addColorStop(1, '#1565C0');
+
+        const waterChart = new Chart(ctxWater, {
+            type: 'doughnut',
+            data: { datasets: [{ data: [0, 100], backgroundColor: [gradientWater, '#f0f0f0'], borderWidth: 0, circumference: 180, rotation: 270, cutout: '85%', borderRadius: 20 }] },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+
         function alternarBloqueioEcran(ativar) {
             const telaBloqueio = document.getElementById('bloqueio-remoto');
             if (ativar) {
@@ -253,7 +306,6 @@ if (isset($_GET['ajax'])) {
                 }
                 telaBloqueio.classList.remove('hidden');
             } else {
-                // Se voltou a ativo, esconde o ecrã de bloqueio automaticamente!
                 telaBloqueio.classList.add('hidden');
             }
         }
@@ -270,17 +322,27 @@ if (isset($_GET['ajax'])) {
                         return;
                     }
 
-                    // Se a resposta AJAX vier normal (ativa), garante que a tela saia
                     alternarBloqueioEcran(false);
 
+                    // Atualiza Gráfico de Humidade do Solo
                     if (data && data.percentagem !== undefined) {
                         const v = parseInt(data.percentagem);
                         gaugeChart.data.datasets[0].data = [v, 100 - v];
                         gaugeChart.update();
-                        
                         document.getElementById('humidade-valor').innerText = v + "%";
                         document.getElementById('hora-atualizacao').innerText = "Leitura: " + data.hora;
-                        
+                    }
+
+                    // Atualiza Novo Gráfico do Nível de Água do Reservatório
+                    if (data && data.nivel_agua !== undefined) {
+                        const w = parseInt(data.nivel_agua);
+                        waterChart.data.datasets[0].data = [w, 100 - w];
+                        waterChart.update();
+                        document.getElementById('agua-valor').innerText = w + "%";
+                    }
+                    
+                    // Atualiza Inputs de Configuração
+                    if (data && data.seco !== undefined && data.humido !== undefined) {
                         if(document.activeElement.tagName !== "INPUT") {
                             document.getElementById('input-seco').value = data.seco;
                             document.getElementById('input-humido').value = data.humido;

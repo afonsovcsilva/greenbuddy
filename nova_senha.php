@@ -47,9 +47,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_atualizar'])) {
         // Encriptar a nova palavra-pass por segurança
         $senha_encriptada = password_hash($nova_senha, PASSWORD_DEFAULT);
 
-        // =========================================================================
-        // CORRIGIDO: Agora aponta para a coluna 'senha' da tua BD greenbuddydb
-        // =========================================================================
         $sql_update = "UPDATE utilizadores SET senha = ?, token_recuperacao = NULL, token_expira = NULL WHERE id_utilizador = ?";
         $stmt_update = $conn->prepare($sql_update);
         $stmt_update->bind_param("si", $senha_encriptada, $id_utilizador);

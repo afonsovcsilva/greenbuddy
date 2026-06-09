@@ -82,7 +82,7 @@ if (isset($_GET['acao'])) {
                         <div style='font-family: sans-serif; padding: 20px; color: #333;'>
                             <h2 style='color: #cc4444;'>Conta Eliminada</h2>
                             <p>Olá,</p>
-                            <p>Lamentamos informar, mas a sua conta foi apagada do nosso sistema pois violava os nossos termos de segurança e privacidade.</p>
+                            <p>Lamentamos informar, mas a sua conta foi apagada do nosso system pois violava os nossos termos de segurança e privacidade.</p>
                             <br>
                             <p>Atentamente,<br><b>Equipa GreenBuddy</b></p>
                         </div>
@@ -141,7 +141,7 @@ if (isset($_GET['acao'])) {
 // FUNÇÃO PARA GERAR AS LINHAS DA TABELA
 function renderizarTabelaUtilizadores($conn, $pesquisa = '') {
     if (!empty($pesquisa)) {
-        $query = "SELECT id_utilizador, username, email, status, is_admin FROM utilizadores 
+        $query = "SELECT id_utilizador, username, email, telemovel, status, is_admin FROM utilizadores 
                   WHERE username LIKE ? OR email LIKE ?
                   ORDER BY is_admin DESC, username ASC";
         $stmt = $conn->prepare($query);
@@ -150,7 +150,7 @@ function renderizarTabelaUtilizadores($conn, $pesquisa = '') {
         $stmt->execute();
         $resultado = $stmt->get_result();
     } else {
-        $query = "SELECT id_utilizador, username, email, status, is_admin FROM utilizadores ORDER BY is_admin DESC, username ASC";
+        $query = "SELECT id_utilizador, username, email, telemovel, status, is_admin FROM utilizadores ORDER BY is_admin DESC, username ASC";
         $resultado = $conn->query($query);
     }
 
@@ -208,6 +208,7 @@ function renderizarTabelaUtilizadores($conn, $pesquisa = '') {
             <td><strong>#{$user['id_utilizador']}</strong></td>
             <td>" . htmlspecialchars($user['username']) . " {$badge_admin}</td>
             <td>" . htmlspecialchars($user['email']) . "</td>
+            <td>" . htmlspecialchars($user['telemovel'] ?? 'Não inserido') . "</td>
             <td class='vasos-list'>{$vasos_html}</td>
             <td>{$badge_status}</td>
             <td class='actions'>{$botoes}</td>
@@ -215,7 +216,7 @@ function renderizarTabelaUtilizadores($conn, $pesquisa = '') {
     }
 
     if ($html == "") {
-        $html = "<tr><td colspan='6' style='text-align:center; color:#888; padding: 30px;'>Nenhum utilizador encontrado com esse critério.</td></tr>";
+        $html = "<tr><td colspan='7' style='text-align:center; color:#888; padding: 30px;'>Nenhum utilizador encontrado com esse critério.</td></tr>";
     }
 
     return $html;
@@ -314,6 +315,7 @@ if (isset($_GET['atualizar_tabela']) && $_GET['atualizar_tabela'] == 1) {
                     <th>ID</th>
                     <th>Utilizador</th>
                     <th>Email</th>
+                    <th>Telefone</th>
                     <th>Vasos Cadastrados (Ações)</th>
                     <th>Estado Conta</th>
                     <th>Ações Conta</th>

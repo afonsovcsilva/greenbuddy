@@ -14,8 +14,6 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request).catch((err) => {
-            // Em caso de falha crítica ou perda total de internet, 
-            // podes tratar o erro aqui. Por agora, mantém o fluxo normal.
             console.log("Erro de rede detetado pelo SW:", err);
         })
     );
