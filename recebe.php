@@ -2,24 +2,131 @@
 require "db.php"; 
 date_default_timezone_set('Europe/Lisbon');
 
+// Importar as classes do PHPMailer para o topo do ficheiro
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'vendor/autoload.php'; // Usa o autoloader do teu projeto
+
+// =========================================================================
+// --- FUNÇÃO AUXILIAR: CALCULAR AUTONOMIA REAL DECRESCENTE ---
+// =========================================================================
+function calcularAutonomiaRestante($seco, $humido, $dataReset, $idVaso, $conn) {
+    $limiteSeco = intval($seco);
+    $limiteHumido = intval($humido);
+    
+    if ($limiteHumido <= $limiteSeco) {
+        return ["texto" => "Dados Inválidos", "dias_restantes" => 0];
+    }
+
+    // 1. Capacidade total (3375ml) e consumo diário
+    $volumeTotalMl = 15 * 15 * 15; 
+    $humidadeMediaAlvo = ($limiteSeco + $limiteHumido) / 2;
+    $consumoDiarioEstimadoMl = $humidadeMediaAlvo * 6.5; 
+
+    // 2. Quantos dias DURARIA no total se estivesse cheio
+    $diasAutonomiaTotal = $volumeTotalMl / $consumoDiarioEstimadoMl;
+    $segundosAutonomiaTotal = intval($diasAutonomiaTotal * 24 * 60 * 60);
+
+    // 3. Calcular quanto tempo passou desde o último Reset de Água
+    $timestampReset = strtotime($dataReset);
+    $timestampAgora = time();
+    $segundosPassados = $timestampAgora - $timestampReset;
+
+    // 4. Calcular o tempo que resta
+    $segundosRestantes = $segundosAutonomiaTotal - $segundosPassados;
+
+    if ($segundosRestantes <= 0) {
+        return ["texto" => "Sem Água! Reabasteça", "dias_restantes" => 0];
+    }
+
+    $diasRestantes = $segundosRestantes / (24 * 60 * 60);
+
+    // --- LÓGICA DE ENVIO DE EMAIL REAL COM PHPMAILER (QUANDO CHEGA A 1 DIA OU MENOS) ---
+    if ($diasRestantes <= 1.0) {
+        // Obter os dados de e-mail, utilizador e nome do vaso para personalizar o aviso
+        $sql_ev = "SELECT vc.email_enviado, u.email, u.username, v.nome_vaso 
+                   FROM vaso_config vc 
+                   JOIN vasos v ON v.id_vaso = vc.id 
+                   JOIN utilizadores u ON u.id_utilizador = v.id_utilizador 
+                   WHERE vc.id = ? LIMIT 1";
+        $stmt_ev = $conn->prepare($sql_ev);
+        $stmt_ev->bind_param("i", $idVaso);
+        $stmt_ev->execute();
+        $res_ev = $stmt_ev->get_result()->fetch_assoc();
+
+        if ($res_ev && intval($res_ev['email_enviado']) === 0 && !empty($res_ev['email'])) {
+            
+            $mail = new PHPMailer(true);
+
+            try {
+                // Configurações exatas baseadas no teu recuperar.php
+                $mail->isSMTP();
+                $mail->Host       = 'smtp.gmail.com';             
+                $mail->SMTPAuth   = true;
+                $mail->Username   = 'greenbuddy.app.26@gmail.com'; 
+                $mail->Password   = 'rhgy ffla gysz hgav'; 
+                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                $mail->Port       = 587;
+                $mail->CharSet    = 'UTF-8';
+
+                // Destinatários dinâmicos
+                $mail->setFrom('greenbuddy.app.26@gmail.com', 'GreenBuddy');
+                $mail->addAddress($res_ev['email'], $res_ev['username']);
+
+                // Corpo do e-mail em formato HTML estruturado
+                $mail->isHTML(true);
+                $mail->Subject = "GreenBuddy - O teu vaso '{$res_ev['nome_vaso']}' precisa de água!";
+                
+                $percentagemAgua = intval(($segundosRestantes / $segundosAutonomiaTotal) * 100);
+                $tempoTexto = ($diasRestantes >= 1) ? number_format($diasRestantes, 1) . " dias" : number_format($diasRestantes * 24, 0) . " horas";
+
+                $mail->Body = "
+                    <h3>Olá, {$res_ev['username']}!</h3>
+                    <p>O teu assistente GreenBuddy detetou que o reservatório do vaso <b>{$res_ev['nome_vaso']}</b> está quase vazio.</p>
+                    <p>Resta apenas cerca de <b>{$tempoTexto}</b> de autonomia restante (Reservatório a {$percentagemAgua}%).</p>
+                    <p>Por favor, adiciona água ao reservatório assim que puderes para garantir a rega correta da tua planta.</p>
+                    <br>
+                    <p>Depois de reatestares, não te esqueças de carregar no botão <b>Depósito Reabastecido</b> no teu painel web para reiniciar o contador!</p>
+                    <br>
+                    <p><small>Este é um aviso automático gerado pelo teu sistema GreenBuddy.</small></p>
+                ";
+
+                $mail->send();
+
+                // Marca na BD como enviado para não repetir a cada requisição AJAX
+                $stmt_up_email = $conn->prepare("UPDATE vaso_config SET email_enviado = 1 WHERE id = ?");
+                $stmt_up_email->bind_param("i", $idVaso);
+                $stmt_up_email->execute();
+
+            } catch (Exception $e) {
+                // Falha silenciosa no background para não quebrar o retorno JSON do painel
+            }
+        }
+    }
+
+    if ($diasRestantes >= 1) {
+        return ["texto" => "~ " . number_format($diasRestantes, 1, '.', '') . " Dias", "dias_restantes" => $diasRestantes];
+    } else {
+        $horas = $diasRestantes * 24;
+        return ["texto" => "~ " . number_format($horas, 0, '.', '') . " Horas", "dias_restantes" => $diasRestantes];
+    }
+}
+
 // =========================================================================
 // --- 1. RECEBER DADOS DO SENSOR/HARDWARE (GET) ---
-// Colocado no topo para o hardware não ser bloqueado pela sessão/login
 // =========================================================================
 $humidade = $_GET['humidade'] ?? null;
 $mac = $_GET['mac'] ?? null;
-$agua = $_GET['agua'] ?? null; // Captura o nível do reservatório enviado pelo Arduino
 
 if ($humidade !== null) {
     $data = date("Y-m-d"); 
     $hora = date("H:i:s");
     
-    // 1. Guarda a humidade e o nível de água na base de dados (Adicionada a coluna nivel_agua)
-    $stmt = $conn->prepare("INSERT INTO vaso_humidade (data, hora, percentagem, mac_address, nivel_agua) VALUES (?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssss", $data, $hora, $humidade, $mac, $agua);
+    $stmt = $conn->prepare("INSERT INTO vaso_humidade (data, hora, percentagem, mac_address) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("ssss", $data, $hora, $humidade, $mac);
     $stmt->execute();
     
-    // 2. Tenta descobrir o ID do vaso através do endereço MAC do hardware
     $id_vaso_sensor = 1;
     if ($mac !== null) {
         $sql_mac = "SELECT id_vaso FROM vasos WHERE mac_address = ? LIMIT 1"; 
@@ -37,20 +144,20 @@ if ($humidade !== null) {
         $id_vaso_sensor = intval($_GET['id']);
     }
 
-    // 3. Procura as configurações para responder ao hardware
     $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
     $stmt_config->bind_param("i", $id_vaso_sensor);
     $stmt_config->execute();
     $res_config = $stmt_config->get_result();
     $config = $res_config->fetch_assoc();
     
-    // Resposta direta para o hardware
-    echo "CONF_SECO:" . ($config['seco_limite'] ?? 0) . "|CONF_HUMIDO:" . ($config['humido_limite'] ?? 0);
-    exit; // Termina aqui a execução para o hardware não receber o HTML
+    // Adicionado o parâmetro status_rega (0 para desligado/encher, 1 para ativo) enviado para o hardware ler
+    $status_rega = isset($config['status_rega']) ? $config['status_rega'] : 1;
+    echo "CONF_SECO:" . ($config['seco_limite'] ?? 0) . "|CONF_HUMIDO:" . ($config['humido_limite'] ?? 0) . "|STATUS_REGA:" . $status_rega;
+    exit; 
 }
 
 // =========================================================================
-// --- 2. CONTROLO DE SESSÃO DO UTILIZADOR (APENAS PARA O NAVEGADOR) ---
+// --- 2. CONTROLO DE SESSÃO DO UTILIZADOR ---
 // =========================================================================
 session_start(); 
 
@@ -62,13 +169,9 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $id_vaso = isset($_GET['id']) ? intval($_GET['id']) : (isset($_POST['id_vaso']) ? intval($_POST['id_vaso']) : 1);
 
-// =========================================================================
-// VERIFICAÇÃO DE BLOQUEIO REAL: FOI DESATIVADO O VASO OU O UTILIZADOR?
-// =========================================================================
 $esta_bloqueado = false;
 $nome_vaso_exibicao = "GreenBuddy";
 
-// 1. Verifica o estado do VASO na tabela 'vasos'
 $sql_check_vaso = "SELECT status_vaso, nome_vaso FROM vasos WHERE id_vaso = ? LIMIT 1";
 $stmt_check_vaso = $conn->prepare($sql_check_vaso);
 $stmt_check_vaso->bind_param("i", $id_vaso);
@@ -82,14 +185,11 @@ if ($res_vaso->num_rows === 0) {
     if (!empty($dados_vaso['nome_vaso'])) {
         $nome_vaso_exibicao = $dados_vaso['nome_vaso'];
     }
-    
-    // SE O STATUS_VASO FOR DIFERENTE DE 'ativo', BLOQUEIA!
     if (!isset($dados_vaso['status_vaso']) || trim($dados_vaso['status_vaso']) !== 'ativo') {
         $esta_bloqueado = true;
     }
 }
 
-// 2. Verifica também o estado do UTILIZADOR por segurança
 $sql_check_user = "SELECT status FROM utilizadores WHERE id_utilizador = ? LIMIT 1";
 $stmt_check_user = $conn->prepare($sql_check_user);
 $stmt_check_user->bind_param("i", $user_id);
@@ -105,7 +205,6 @@ if ($res_user->num_rows === 0) {
     }
 }
 
-// SE ESTIVER BLOQUEADO (VASO OU USER) E FOR AJAX: Responde 'apagado'
 if ($esta_bloqueado) {
     if (isset($_GET['ajax']) || isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
         header('Content-Type: application/json');
@@ -114,34 +213,65 @@ if ($esta_bloqueado) {
     }
 }
 
-// Resposta para o script de verificação quando está tudo ATIVO
 if (isset($_GET['ajax_check'])) {
     header('Content-Type: application/json');
     echo json_encode(['status' => 'ativo']);
     exit();
 }
-// =========================================================================
 
-// --- 3. ATUALIZAÇÃO DA CONFIGURAÇÃO (POST) ---
+// =========================================================================
+// --- 3. ATUALIZAÇÃO DA CONFIGURAÇÃO (POST) E BOTÃO DE RESET ---
+// =========================================================================
 if (isset($_POST['update_config'])) {
     $seco = intval($_POST['seco_limite']);
     $humido = intval($_POST['humido_limite']);
     $id_post = intval($_POST['id_vaso']); 
     
-    $stmt = $conn->prepare("UPDATE vaso_config SET seco_limite = ?, humido_limite = ? WHERE id = ?");
-    $stmt->bind_param("iii", $seco, $humido, $id_post);
+    // Quando altera limites, reiniciamos a contagem para evitar erros de cálculo abruptos
+    $agora_string = date("Y-m-d H:i:s");
+    
+    $stmt = $conn->prepare("UPDATE vaso_config SET seco_limite = ?, humido_limite = ?, data_reset = ?, email_enviado = 0 WHERE id = ?");
+    $stmt->bind_param("iisi", $seco, $humido, $agora_string, $id_post);
     $stmt->execute();
     
     header("Location: recebe.php?id=" . $id_post); 
     exit;
 }
 
+// Lógica dedicada do Botão de Reabastecimento (Reset da Água)
+if (isset($_POST['reset_agua'])) {
+    $id_post = intval($_POST['id_vaso']);
+    $agora_string = date("Y-m-d H:i:s");
+
+    // Zera o estado do email e mete a data_reset à hora atual
+    $stmt = $conn->prepare("UPDATE vaso_config SET data_reset = ?, email_enviado = 0 WHERE id = ?");
+    $stmt->bind_param("si", $agora_string, $id_post);
+    $stmt->execute();
+
+    header("Location: recebe.php?id=" . $id_post); 
+    exit;
+}
+
+// Lógica dedicada para Alternar o Estado de Funcionamento da Rega (Ligar/Desligar para encher)
+if (isset($_POST['alternar_status_vaso'])) {
+    $id_post = intval($_POST['id_vaso']);
+    $novo_status = intval($_POST['novo_status']);
+    
+    $stmt = $conn->prepare("UPDATE vaso_config SET status_rega = ? WHERE id = ?");
+    $stmt->bind_param("ii", $novo_status, $id_post);
+    $stmt->execute();
+    
+    header("Location: recebe.php?id=" . $id_post); 
+    exit;
+}
+
+// =========================================================================
 // --- 4. RESPOSTA PARA O GRÁFICO/PAINEL (AJAX) ---
+// =========================================================================
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
     
-    // Puxa também a coluna nivel_agua da base de dados
-    $res_atual = $conn->query("SELECT percentagem, nivel_agua, hora, data FROM vaso_humidade ORDER BY id_humidade DESC LIMIT 1");
+    $res_atual = $conn->query("SELECT percentagem, hora, data FROM vaso_humidade ORDER BY id_humidade DESC LIMIT 1");
     $dados = $res_atual->fetch_assoc();
     
     $stmt_config = $conn->prepare("SELECT * FROM vaso_config WHERE id = ?");
@@ -150,16 +280,32 @@ if (isset($_GET['ajax'])) {
     $res_config = $stmt_config->get_result();
     $config = $res_config->fetch_assoc();
     
+    // Executa a função dinâmica em tempo de execução para obter o decréscimo real e processar o e-mail se necessário
+    $autonomia_dados = calcularAutonomiaRestante(
+        $config['seco_limite'] ?? 0, 
+        $config['humido_limite'] ?? 0, 
+        $config['data_reset'] ?? date("Y-m-d H:i:s"),
+        $id_vaso,
+        $conn
+    );
+    
     echo json_encode([
         "status" => "ativo",
         "percentagem" => $dados['percentagem'] ?? 0,
-        "nivel_agua" => $dados['nivel_agua'] ?? 0, // Enviando o nível da água para o JavaScript
         "hora" => $dados['hora'] ?? "--:--",
         "seco" => $config['seco_limite'] ?? 0,
-        "humido" => $config['humido_limite'] ?? 0
+        "humido" => $config['humido_limite'] ?? 0,
+        "autonomia" => $autonomia_dados['texto']
     ]);
     exit;
 }
+
+// Buscar configuração atual para carregar o estado do botão na interface HTML
+$stmt_view = $conn->prepare("SELECT status_rega FROM vaso_config WHERE id = ?");
+$stmt_view->bind_param("i", $id_vaso);
+$stmt_view->execute();
+$res_view = $stmt_view->get_result()->fetch_assoc();
+$vaso_ligado = (isset($res_view['status_rega']) && intval($res_view['status_rega']) === 0) ? false : true;
 ?>
 
 <!DOCTYPE html>
@@ -180,7 +326,6 @@ if (isset($_GET['ajax'])) {
         .card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); padding: 30px; border-radius: 35px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.06); margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.5); text-align: center; }
         .gauge-container { position: relative; width: 85%; margin: 0 auto 10px; }
         .value-display { position: absolute; top: 65%; left: 50%; transform: translate(-50%, -50%); font-size: 3rem; font-weight: 800; color: var(--primary); }
-        .value-display.water-text { color: var(--water); }
         .update-tag { font-size: 0.75rem; background: #e1ede0; color: var(--primary); padding: 5px 12px; border-radius: 20px; display: inline-block; margin-top: 5px; }
         .config-group { display: flex; gap: 15px; margin-bottom: 25px; }
         .config-item { flex: 1; background: #f9fbf9; padding: 15px; border-radius: 20px; border: 1px solid #eee; }
@@ -188,8 +333,21 @@ if (isset($_GET['ajax'])) {
         input[type="number"] { width: 100%; background: transparent; border: none; font-size: 1.5rem; font-weight: 700; color: var(--primary); text-align: center; outline: none; }
         .btn-update { background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; border: none; padding: 18px; width: 100%; border-radius: 20px; font-weight: 700; cursor: pointer; transition: 0.3s; }
         .btn-update:hover { transform: translateY(-2px); box-shadow: 0 15px 25px rgba(45,90,39,0.3); }
+        
+        /* Botão estilizado do Reset de Água */
+        .btn-water-reset { background: linear-gradient(135deg, #1976D2, var(--water)); color: white; border: none; padding: 12px; width: 80%; border-radius: 50px; font-weight: 700; cursor: pointer; transition: 0.3s; margin-top: 15px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px;}
+        .btn-water-reset:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(33,150,243,0.3); }
 
-        /* Estilos do Ecrã de Bloqueio Integral */
+        /* Novo botão para Desligar / Modo Manutenção */
+        .btn-toggle-system { color: white; border: none; padding: 12px; width: 80%; border-radius: 50px; font-weight: 700; cursor: pointer; transition: 0.3s; margin-top: 10px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px;}
+        .btn-toggle-off { background: linear-gradient(135deg, #e53935, #b71c1c); }
+        .btn-toggle-on { background: linear-gradient(135deg, #43a047, #1b5e20); }
+        .btn-toggle-system:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.15); }
+
+        .autonomia-container { margin-top: 10px; }
+        .autonomia-v { font-size: 2.2rem; font-weight: 800; color: var(--water); display: block; margin: 5px 0; }
+        .autonomia-sub { font-size: 0.8rem; color: #666; display: block; }
+
         #bloqueio-remoto {
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
@@ -224,9 +382,7 @@ if (isset($_GET['ajax'])) {
             <span style="font-size: 4.5rem; display: block; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));">🚫</span>
             <h2>Vaso Desativado</h2>
             <p>
-                O seu vaso foi desativado pelo admin, por favor aguarde que ele reative. 
-                Se o admin não o contactar com o motivo em 10 minutos, pode contactá-lo:
-                <br>
+                O seu vaso foi desativado pelo admin...<br>
                 <span class="email-contacto">greenbuddy.app.26@gmail.com</span>
             </p>
         </div>
@@ -247,10 +403,27 @@ if (isset($_GET['ajax'])) {
     </div>
 
     <div class="card">
-        <h3>Nível do Reservatório</h3>
-        <div class="gauge-container">
-            <canvas id="waterChart"></canvas>
-            <div class="value-display water-text" id="agua-valor">--%</div>
+        <h3>Previsão do Reservatório</h3>
+        <div class="autonomia-container">
+            <span style="font-size: 2.5rem;">💧</span>
+            <span class="autonomia-v" id="txt-tempo-restante">A calcular...</span>
+            <span class="autonomia-sub" id="txt-detalhe-calculo">Com base nos limites configurados</span>
+            
+            <form method="POST" style="margin-top: 10px;">
+                <input type="hidden" name="id_vaso" value="<?php echo $id_vaso; ?>">
+                <button type="submit" name="reset_agua" class="btn-water-reset">🔄 Depósito Reabastecido</button>
+            </form>
+
+            <form method="POST" style="margin-top: 5px;">
+                <input type="hidden" name="id_vaso" value="<?php echo $id_vaso; ?>">
+                <?php if ($vaso_ligado): ?>
+                    <input type="hidden" name="novo_status" value="0">
+                    <button type="submit" name="alternar_status_vaso" class="btn-toggle-system btn-toggle-off">🛑 Desligar para Encher</button>
+                <?php else: ?>
+                    <input type="hidden" name="novo_status" value="1">
+                    <button type="submit" name="alternar_status_vaso" class="btn-toggle-system btn-toggle-on">✅ Ligar Sistema</button>
+                <?php endif; ?>
+            </form>
         </div>
     </div>
 
@@ -274,7 +447,6 @@ if (isset($_GET['ajax'])) {
     </div>
 
     <script>
-        // Configuração do Gráfico do Solo (Verde)
         const ctx = document.getElementById('gaugeChart').getContext('2d');
         const gradient = ctx.createLinearGradient(0, 0, 0, 200);
         gradient.addColorStop(0, '#4caf50'); gradient.addColorStop(1, '#2d5a27');
@@ -285,25 +457,9 @@ if (isset($_GET['ajax'])) {
             options: { responsive: true, plugins: { legend: { display: false } } }
         });
 
-        // Configuração do Novo Gráfico da Água (Azul)
-        const ctxWater = document.getElementById('waterChart').getContext('2d');
-        const gradientWater = ctxWater.createLinearGradient(0, 0, 0, 200);
-        gradientWater.addColorStop(0, '#2196F3'); gradientWater.addColorStop(1, '#1565C0');
-
-        const waterChart = new Chart(ctxWater, {
-            type: 'doughnut',
-            data: { datasets: [{ data: [0, 100], backgroundColor: [gradientWater, '#f0f0f0'], borderWidth: 0, circumference: 180, rotation: 270, cutout: '85%', borderRadius: 20 }] },
-            options: { responsive: true, plugins: { legend: { display: false } } }
-        });
-
         function alternarBloqueioEcran(ativar) {
             const telaBloqueio = document.getElementById('bloqueio-remoto');
             if (ativar) {
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                        for(let registration of registrations) registration.unregister();
-                    });
-                }
                 telaBloqueio.classList.remove('hidden');
             } else {
                 telaBloqueio.classList.add('hidden');
@@ -324,7 +480,6 @@ if (isset($_GET['ajax'])) {
 
                     alternarBloqueioEcran(false);
 
-                    // Atualiza Gráfico de Humidade do Solo
                     if (data && data.percentagem !== undefined) {
                         const v = parseInt(data.percentagem);
                         gaugeChart.data.datasets[0].data = [v, 100 - v];
@@ -332,24 +487,20 @@ if (isset($_GET['ajax'])) {
                         document.getElementById('humidade-valor').innerText = v + "%";
                         document.getElementById('hora-atualizacao').innerText = "Leitura: " + data.hora;
                     }
-
-                    // Atualiza Novo Gráfico do Nível de Água do Reservatório
-                    if (data && data.nivel_agua !== undefined) {
-                        const w = parseInt(data.nivel_agua);
-                        waterChart.data.datasets[0].data = [w, 100 - w];
-                        waterChart.update();
-                        document.getElementById('agua-valor').innerText = w + "%";
-                    }
                     
-                    // Atualiza Inputs de Configuração
                     if (data && data.seco !== undefined && data.humido !== undefined) {
+                        document.getElementById('txt-tempo-restante').innerText = data.autonomia;
+                        
+                        const mlPorRega = (parseInt(data.humido) - parseInt(data.seco)) * 12;
+                        document.getElementById('txt-detalhe-calculo').innerText = "Gasta aprox. " + mlPorRega + "ml por ciclo de rega.";
+
                         if(document.activeElement.tagName !== "INPUT") {
                             document.getElementById('input-seco').value = data.seco;
                             document.getElementById('input-humido').value = data.humido;
                         }
                     }
                 })
-                .catch(err => console.log('A aguardar dados válidos...'));
+                .catch(err => console.log('A aguardar dados...'));
         }
 
         setInterval(atualizar, 3000); 
