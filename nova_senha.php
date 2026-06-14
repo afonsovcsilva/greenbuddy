@@ -11,7 +11,7 @@ if (isset($_GET['token'])) {
     $token = trim($_GET['token']);
     $agora = date("Y-m-d H:i:s");
 
-    // Verificar se o token existe e se ainda é válido (data de expiração superior a "agora")
+    // Verificar se o token existe e se ainda é válido
     $sql = "SELECT id_utilizador FROM utilizadores WHERE token_recuperacao = ? AND token_expira > ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("ss", $token, $agora);

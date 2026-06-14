@@ -177,14 +177,47 @@ ngrok http 7878
 
 A base de dados `greenbuddydb` contém as seguintes tabelas:
 
-**`vaso`** — Registo dos vasos monitorizados
+**`dispositivos_validos`** — MAC addresses de dispositivos autorizados
 
 | Campo | Tipo | Descrição |
 |---|---|---|
-| `id` | INT (PK, AUTO) | Identificador único |
-| `descricao` | VARCHAR(250) | Descrição do vaso |
-| `tamanho` | VARCHAR(200) | Tamanho do vaso |
-| `localizacao` | VARCHAR(200) | Localização física |
+| `mac_address` | VARCHAR(50) (PK) | Endereço MAC do dispositivo |
+
+**`utilizadores`** — Registo de utilizadores da aplicação
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `id_utilizador` | INT (PK, AUTO) | Identificador único |
+| `username` | VARCHAR(250) | Nome de utilizador |
+| `senha` | VARCHAR(250) | Password (hash bcrypt) |
+| `email` | VARCHAR(250) | Endereço de e-mail |
+| `telemovel` | INT | Número de telemóvel |
+| `is_admin` | TINYINT(1) | Flag de administrador |
+| `status` | VARCHAR(20) | Estado da conta (ativo/inativo) |
+| `token_recuperacao` | VARCHAR(255) | Token para recuperação de password |
+| `token_expira` | DATETIME | Data/hora de expiração do token |
+
+**`vasos`** — Registo dos vasos monitorizados
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `id_vaso` | INT (PK, AUTO) | Identificador único |
+| `id_utilizador` | INT (FK) | ID do utilizador proprietário |
+| `nome_vaso` | VARCHAR(50) | Nome do vaso |
+| `mac_address` | VARCHAR(50) | MAC address do sensor associado |
+| `status_vaso` | VARCHAR(20) | Estado do vaso (ativo/inativo) |
+
+**`vaso_config`** — Configuração dos vasos
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `id` | INT (PK) | Identificador do vaso |
+| `seco_limite` | INT | Limite de humidade baixa (%) |
+| `humido_limite` | INT | Limite de humidade alta (%) |
+| `autonomia_estimada` | VARCHAR(50) | Estimativa de autonomia |
+| `data_reset` | DATETIME | Data do último reset |
+| `email_enviado` | TINYINT(1) | Flag de e-mail enviado |
+| `status_rega` | INT | Estado do sistema de rega |
 
 **`vaso_humidade`** — Leituras de humidade registadas
 
@@ -194,6 +227,8 @@ A base de dados `greenbuddydb` contém as seguintes tabelas:
 | `data` | VARCHAR(100) | Data da leitura |
 | `hora` | VARCHAR(50) | Hora da leitura |
 | `percentagem` | VARCHAR(50) | Percentagem de humidade |
+| `mac_address` | VARCHAR(20) | MAC address do sensor |
+| `nivel_agua` | INT | Nível de água (em mm ou percentagem) |
 
 ### Credenciais da Base de Dados
 

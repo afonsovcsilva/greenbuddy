@@ -1,6 +1,4 @@
 <?php
-// Desativa a exibição de avisos simples (Notices) do servidor,
-// mas mantém os erros graves ativos caso algo falhe criticamente.
 ini_set('display_errors', 0); 
 error_reporting(E_ALL & ~E_NOTICE);
 
@@ -15,7 +13,7 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 
 // =========================================================================
-// BLOCO DE DIAGNÓSTICO E VERIFICAÇÃO EM TEMPO REAL (OTIMIZADO)
+// BLOCO DE DIAGNÓSTICO E VERIFICAÇÃO EM TEMPO REAL
 // =========================================================================
 $sql_check_deleted = "SELECT * FROM utilizadores WHERE id_utilizador = ?";
 $stmt_check_deleted = $conn->prepare($sql_check_deleted);
@@ -26,7 +24,7 @@ $res_check_deleted = $stmt_check_deleted->get_result();
 $esta_bloqueado = false;
 
 if ($res_check_deleted->num_rows === 0) {
-    // A conta REALMENTE não existe na BD (foi apagada)
+    // A conta REALMENTE não existe na Base de Dados
     $esta_bloqueado = true;
 } else {
     // A conta EXISTE. Vamos ler os dados dela para verificar possíveis colunas de bloqueio
@@ -37,7 +35,7 @@ if ($res_check_deleted->num_rows === 0) {
     if (isset($dados_conta['ativo']) && $dados_conta['ativo'] == 0) $esta_bloqueado = true;
 }
 
-// Resposta AJAX imediata (evita carregar o resto do script e poupa largura de banda)
+// Resposta AJAX imediata
 if (isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
     header('Content-Type: application/json');
     if ($esta_bloqueado) {
@@ -67,7 +65,7 @@ $mensagem_perfil = "";
 $sucesso_perfil = false;
 $abrir_modal_erro = false;
 
-// --- LÓGICA DA ÁREA DO UTILIZADOR (ATUALIZAÇÃO DE PERFIL) ---
+// --- LÓGICA DA ÁREA DO UTILIZADOR ---
 if (isset($_POST['btn_atualizar_perfil'])) {
     $novo_user = trim($_POST['username']);
     $novo_email = trim($_POST['email']);
@@ -556,7 +554,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             border: 1px solid #c8e6c9;
         }
 
-        /* MECÂNICA EXCLUSIVA DE BLOQUEIO DE CONTA POR SEGURANÇA */
+
         #bloqueio-conta {
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
@@ -741,7 +739,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             });
         }
 
-        // TÉCNICA RECURSIVA SUPER LEVE: Monitoriza a conta sem sobreposições
+
         function monitorarConta() {
             fetch('ativacao.php?ajax_check=1', {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -768,7 +766,7 @@ $tem_vasos = (count($lista_vasos) > 0);
             });
         }
         
-        // Inicia o ciclo de monitorização assim que o script carrega
+
         monitorarConta();
 
         function switchTab(tab) {

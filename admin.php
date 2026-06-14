@@ -2,18 +2,15 @@
 require "db.php";
 session_start();
 
-// IMPORTAÇÃO DO PHPMAILER PARA O ENVIO DE EMAIL
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require 'vendor/autoload.php';
 
-// PROTEÇÃO: Se não estiver logado ou não for admin, corre com ele daqui
 if (!isset($_SESSION['user_id']) || $_SESSION['is_admin'] != 1) {
     header("Location: login.php");
     exit();
 }
 
-// LÓGICA DE AÇÕES (Utilizadores e Vasos) CORRIGIDA
 if (isset($_GET['acao'])) {
     $acao = $_GET['acao'];
     $id_alvo = isset($_GET['id']) ? intval($_GET['id']) : 0;
@@ -90,8 +87,7 @@ if (isset($_GET['acao'])) {
                     $mail->AltBody = 'A sua conta foi apagada pois violava os nossos termos de segurança e privacidade.';
 
                     $mail->send();
-                } catch (Exception $e) {
-                    // Ignora silenciosamente para não travar a eliminação
+                } catch (Exception $e) {   
                 }
             }
             // ----------------------------------------------------

@@ -4,9 +4,6 @@ session_start();
 
 $mensagem = ""; 
 
-// =========================================================================
-// NOVO: CAPTURA O ERRO DE CONTA ELIMINADA VINDO DO REDIRECIONAMENTO
-// =========================================================================
 if (isset($_GET['erro']) && $_GET['erro'] === 'conta_eliminada') {
     $mensagem = "error|A sua conta foi eliminada pelo admin, por violar os nosso termos de segurança. Se acha que foi um engano contacte o suporte: greenbuddy.app.26@gmail.com.";
 }
@@ -33,7 +30,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $user = $_POST['usuario'];
         $pass = $_POST['senha'];
 
-        // ATUALIZADO: Busca também as colunas status e is_admin
         $sql = "SELECT id_utilizador, username, senha, status, is_admin FROM utilizadores WHERE username = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("s", $user);
@@ -45,19 +41,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             if (password_verify($pass, $row['senha'])) {
                 
-                // ATUALIZADO: Verifica primeiro se o utilizador está bloqueado
                 if (isset($row['status']) && $row['status'] === 'bloqueado') {
                     $mensagem = "error|A sua conta encontra-se temporariamente bloqueada. Contacte o suporte.";
                 } else {
                     $_SESSION['user_id'] = $row['id_utilizador']; 
                     $_SESSION['username'] = $row['username'];
-                    $_SESSION['is_admin'] = $row['is_admin'] ?? 0; // Guarda se é admin na sessão
+                    $_SESSION['is_admin'] = $row['is_admin'] ?? 0; 
 
-                    // ATUALIZADO: Redirecionamento Inteligente com base no cargo
                     if ($_SESSION['is_admin'] == 1) {
-                        header("Location: admin.php"); // Administrador vai para o painel de controlo
+                        header("Location: admin.php"); 
                     } else {
-                        header("Location: ativacao.php"); // Utilizador comum vai para os vasos
+                        header("Location: ativacao.php"); 
                     }
                     exit();
                 }
