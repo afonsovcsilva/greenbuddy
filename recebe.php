@@ -31,7 +31,9 @@ if ($humidade !== null) {
     $stmt->bind_param("ssss", $data, $hora, $humidade, $mac);
     $stmt->execute();
     
-    $id_vaso_sensor = 1;
+    // CORREÇÃO: O teu ID padrão agora é o 11 (o teu vaso real)
+    $id_vaso_sensor = 11; 
+    
     if ($mac !== null) {
         $sql_mac = "SELECT id_vaso FROM vasos WHERE mac_address = ? LIMIT 1"; 
         $stmt_mac = $conn->prepare($sql_mac);
@@ -141,7 +143,7 @@ if (isset($_POST['update_config'])) {
 }
 
 // =========================================================================
-// --- 4. RESPOSTA PARA O GRÁFICO/PAINEL (AJAX) ---
+// --- 4. RESPOSTA PARA O GRÁFICO/PAINEL (AJACE) ---
 // =========================================================================
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
