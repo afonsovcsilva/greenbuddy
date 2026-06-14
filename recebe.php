@@ -1,4 +1,8 @@
 <?php
+// FORÇAR O FECHO IMEDIATO DA LIGAÇÃO PARA NÃO PRENDER O ARDUINO OU REQUISIÇÕES
+header("Connection: close");
+ob_start();
+
 require "db.php"; 
 date_default_timezone_set('Europe/Lisbon');
 
@@ -58,6 +62,12 @@ if ($humidade !== null) {
     
     $status_rega = isset($config['status_rega']) ? $config['status_rega'] : 1;
     echo "CONF_SECO:" . ($config['seco_limite'] ?? 0) . "|CONF_HUMIDO:" . ($config['humido_limite'] ?? 0) . "|STATUS_REGA:" . $status_rega;
+    
+    // Fecha a ligação de rede de forma limpa com o Arduino
+    session_write_close();
+    header("Content-Length: " . ob_get_length());
+    ob_end_flush();
+    flush();
     exit; 
 }
 
@@ -114,6 +124,11 @@ if ($esta_bloqueado) {
     if (isset($_GET['ajax']) || isset($_GET['ajax_check']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest')) {
         header('Content-Type: application/json');
         echo json_encode(['status' => 'apagado']);
+        
+        session_write_close();
+        header("Content-Length: " . ob_get_length());
+        ob_end_flush();
+        flush();
         exit();
     }
 }
@@ -121,6 +136,11 @@ if ($esta_bloqueado) {
 if (isset($_GET['ajax_check'])) {
     header('Content-Type: application/json');
     echo json_encode(['status' => 'ativo']);
+    
+    session_write_close();
+    header("Content-Length: " . ob_get_length());
+    ob_end_flush();
+    flush();
     exit();
 }
 
@@ -143,7 +163,7 @@ if (isset($_POST['update_config'])) {
 }
 
 // =========================================================================
-// --- 4. RESPOSTA PARA O GRÁFICO/PAINEL (AJACE) ---
+// --- 4. RESPOSTA PARA O GRÁFICO/PAINEL (AJAX) ---
 // =========================================================================
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
@@ -170,6 +190,11 @@ if (isset($_GET['ajax'])) {
         "humido" => $config['humido_limite'] ?? 0,
         "autonomia" => $autonomia_dados['texto']
     ]);
+    
+    session_write_close();
+    header("Content-Length: " . ob_get_length());
+    ob_end_flush();
+    flush();
     exit;
 }
 
@@ -371,3 +396,7 @@ $vaso_ligado = (isset($res_view['status_rega']) && intval($res_view['status_rega
     </script>
 </body>
 </html>
+<?php
+// Termina e descarrega o buffer principal da página web normal
+ob_end_flush();
+?>
