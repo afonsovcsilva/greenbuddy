@@ -21,11 +21,11 @@
 
 ## Descrição do Projeto
 
-O **GreenBuddy** é uma aplicação web desenvolvida em PHP que permite monitorizar em tempo real a humidade de vasos de plantas. Os dados de humidade são registados na base de dados e visualizados através de uma interface web intuitiva, com suporte a autenticação de utilizadores, recuperação de password por e-mail e exposição pública do serviço via ngrok.
+O projeto GreenBuddy, desenvolvido no âmbito da Prova de Aptidão Profissional, consiste num sistema de rega automático baseado em Arduino e controlado por uma PWA. O sistema permite automatizar o cuidado das plantas de forma personalizada, prática e acessível.
 
 ---
 
-## Tecnologias Utilizadas
+## Tecnologias Utilizadas no site
 
 | Tecnologia | Versão | Função |
 |---|---|---|
@@ -39,7 +39,7 @@ O **GreenBuddy** é uma aplicação web desenvolvida em PHP que permite monitori
 
 ---
 
-## Pré-requisitos
+## Pré-requisitos para recrear no seu github
 
 Antes de iniciar, certifica-te de que tens instalado na tua máquina:
 
@@ -290,9 +290,9 @@ docker logs mysql_db
 
 ---
 
-## Créditos
+## Créditos do site
 
-Projeto desenvolvido no âmbito da **Prova de Aptidão Profissional (PAP)**.
+Projeto desenvolvido no âmbito da **Prova de Aptidão Profissional**.
 
 - **Autor:** *Afonso Silva*
 - **Curso:** *Técnico de Gestão e Programação de Sistemas Informáticos*
